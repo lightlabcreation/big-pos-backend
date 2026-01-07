@@ -30,11 +30,13 @@ Complete backend API for the Big Company multi-role platform built with Node.js,
 ## Installation
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Set up environment variables (already configured in `.env`):
+
 ```
 DATABASE_URL="mysql://root:@localhost:3306/big_company"
 JWT_SECRET="super_secret_jwt_key_12345"
@@ -42,12 +44,14 @@ PORT=9000
 ```
 
 3. Generate Prisma Client and push schema to database:
+
 ```bash
 npx prisma generate
 npx prisma db push
 ```
 
 4. Seed the database with demo data:
+
 ```bash
 npm run seed
 ```
@@ -55,44 +59,52 @@ npm run seed
 ## Running the Server
 
 ### Development Mode (with auto-reload):
+
 ```bash
 npm run dev
 ```
 
 ### Production Mode:
+
 ```bash
 npm run build
 node dist/index.js
 ```
 
 ### Quick Start:
+
 ```bash
 npm start
 ```
 
-The server will start on `http://localhost:9000`
+The server will start on `https://big-pos-backend-production.up.railway.app`
 
 ## Demo Credentials
 
 After running the seed script, you can use these credentials:
 
 ### Admin
+
 - Email: `admin@bigcompany.rw`
 - Password: `admin123`
 
 ### Employee
+
 - Email: `employee@bigcompany.rw`
 - Password: `employee123`
 
 ### Wholesaler
+
 - Email: `wholesaler@bigcompany.rw`
 - Password: `wholesaler123`
 
 ### Retailer
+
 - Email: `retailer@bigcompany.rw`
 - Password: `retailer123`
 
 ### Consumer
+
 - Phone: `250788123456`
 - PIN: `1234`
 
@@ -101,11 +113,13 @@ After running the seed script, you can use these credentials:
 ### Authentication (All Roles)
 
 #### Register
+
 - `POST /store/auth/register` - Consumer registration
 - `POST /retailer/auth/register` - Retailer registration
 - `POST /wholesaler/auth/register` - Wholesaler registration
 
 #### Login
+
 - `POST /store/auth/login` - Consumer login (phone + PIN)
 - `POST /retailer/auth/login` - Retailer login (email + password)
 - `POST /wholesaler/auth/login` - Wholesaler login (email + password)
@@ -246,13 +260,15 @@ npm run seed
 ### Testing API
 
 You can test the API using:
+
 - **Postman** or **Insomnia**
 - **cURL**
 - The frontend application
 
 Example login request:
+
 ```bash
-curl -X POST http://localhost:9000/retailer/auth/login \
+curl -X POST https://big-pos-backend-production.up.railway.app/retailer/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"retailer@bigcompany.rw","password":"retailer123"}'
 ```

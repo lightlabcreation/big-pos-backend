@@ -8,6 +8,7 @@
     "start": "ts-node src/index.ts",
     "build": "tsc",
     "seed": "ts-node src/seed.ts",
+    "postinstall": "prisma generate",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

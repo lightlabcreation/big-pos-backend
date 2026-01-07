@@ -27,14 +27,38 @@ app.use('/employee/auth', authRoutes);
 
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
-app.use('/wholesaler', wholesalerRoutes);
-app.use('/employee', employeeRoutes);
-app.use('/admin', adminRoutes);
-app.use('/nfc', nfcRoutes);
+import debugRoutes from './routes/debugRoutes';
+
+// ... imports
+
 app.use('/wallet', walletRoutes);
+app.use('/debug', debugRoutes); // Public debug endpoint
+
 
 app.get('/', (req, res) => {
   res.send('Big Company API is running');
+});
+
+// Global error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('SERVER ERROR:', err);
+  
+  // Log to file
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const logPath = path.join(__dirname, '../error.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logPath, `[${timestamp}] ${err.stack || err}\n`);
+  } catch (fsError) {
+    console.error('Failed to write to error log:', fsError);
+  }
+
+  res.status(500).json({ 
+    success: false,
+    message: 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 app.listen(PORT, () => {
