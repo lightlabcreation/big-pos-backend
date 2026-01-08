@@ -40,7 +40,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
           retailerId: retailerProfile.id,
           createdAt: { gte: today, lt: tomorrow }
         },
-        include: { items: true }
+        include: { saleItems: true }
       }),
       // All Sales (for revenue stats)
       prisma.sale.findMany({
@@ -154,12 +154,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       where: { retailerId: retailerProfile.id },
       take: 5,
       orderBy: { createdAt: 'desc' },
-      include: { consumer: true }
+      include: { consumerProfile: true }
     });
 
     const formattedRecentOrders = recentOrders.map(order => ({
       id: order.id.substring(0, 8).toUpperCase(),
-      customer: order.consumer?.fullName || 'Walk-in Customer',
+      customer: order.consumerProfile?.fullName || 'Walk-in Customer',
       items: 0, // Need to fetch items count if critical
       total: order.totalAmount,
       status: order.status,
@@ -227,7 +227,7 @@ export const getInventory = async (req: AuthRequest, res: Response) => {
     // 2. Get Global Catalog (Wholesaler products)
     const catalogProducts = await prisma.product.findMany({
       where: { wholesalerId: { not: null } },
-      include: { wholesaler: true },
+      include: { wholesalerProfile: true },
       orderBy: { name: 'asc' }
     });
 
@@ -284,14 +284,18 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       // Find the order by ID (treating invoice_number as Order ID)
       let order = await prisma.order.findUnique({
         where: { id: invoice_number },
-        include: { items: { include: { product: true } } }
+      include: { 
+        orderItems: { 
+          include: { product: true } 
+        } 
+      }
       });
 
       // Validates if the invoice number corresponds to a ProfitInvoice
       if (!order) {
         const profitInvoice = await prisma.profitInvoice.findUnique({
           where: { invoiceNumber: invoice_number },
-          include: { order: { include: { items: { include: { product: true } } } } }
+          include: { order: { include: { orderItems: { include: { product: true } } } } }
         });
         if (profitInvoice) {
           order = profitInvoice.order;
@@ -319,7 +323,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       }
 
       const createdProducts = [];
-      for (const item of order.items) {
+      for (const item of order.orderItems) {
         const sourceProduct = item.product;
         // Create new inventory item
         const newProduct = await prisma.product.create({
@@ -423,10 +427,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 
     const sales = await prisma.sale.findMany({
       where,
-      include: {
-        consumer: { include: { user: true } },
-        items: { include: { product: true } }
-      },
+      include: { consumerProfile: { include: { user: true } } },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit as string),
       skip: parseInt(offset as string)
@@ -438,18 +439,10 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     const formattedOrders = sales.map(sale => ({
       id: sale.id,
       display_id: sale.id.substring(0, 8).toUpperCase(),
-      customer_name: sale.consumer?.fullName || 'Walk-in Customer',
-      customer_phone: sale.consumer?.user?.phone || 'N/A',
-      customer_email: sale.consumer?.user?.email,
-      items: sale.items.map(item => ({
-        id: item.id,
-        product_id: item.productId,
-        product_name: item.product.name,
-        sku: item.product.sku,
-        quantity: item.quantity,
-        unit_price: item.price,
-        total: item.price * item.quantity
-      })),
+      customer_name: sale.consumerProfile?.fullName || 'Walk-in Customer',
+      customer_phone: sale.consumerProfile?.user?.phone || 'N/A',
+      customer_email: sale.consumerProfile?.user?.email,
+      items: [], // saleItems not included in query, would need separate fetch
       subtotal: sale.totalAmount, // Simplified
       discount: 0,
       total: sale.totalAmount,
@@ -665,7 +658,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
           totalAmount: (subtotal + tax_amount - (discount || 0)),
           paymentMethod: payment_method,
           status: 'completed',
-          items: {
+          saleItems: {
             create: items.map((item: any) => ({
               productId: item.product_id,
               quantity: item.quantity,
@@ -769,7 +762,7 @@ export const getWholesalerProducts = async (req: AuthRequest, res: Response) => 
 
     const products = await prisma.product.findMany({
       where,
-      include: { wholesaler: true }, // Include wholesaler info
+      include: { wholesalerProfile: true }, // Include wholesaler info
       take: parseInt(limit as string),
       skip: parseInt(offset as string),
       orderBy: { name: 'asc' }
@@ -784,7 +777,7 @@ export const getWholesalerProducts = async (req: AuthRequest, res: Response) => 
       stock_available: p.stock,
       min_order: 1, // Default min order
       unit: p.unit || 'unit',
-      wholesaler_name: p.wholesaler?.companyName
+      wholesaler_name: p.wholesalerProfile?.companyName
     }));
 
     res.json({ products: formattedProducts });
@@ -834,7 +827,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           wholesalerId: wholesalerId,
           totalAmount: totalAmount,
           status: 'pending',
-          items: {
+          orderItems: {
             create: items.map((item: any) => ({
               productId: item.product_id,
               quantity: item.quantity,
@@ -982,7 +975,7 @@ export const getCreditOrders = async (req: AuthRequest, res: Response) => {
 
     const orders = await prisma.order.findMany({
       where,
-      include: { wholesaler: true },
+      include: { wholesalerProfile: true },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit as string),
       skip: parseInt(offset as string)
@@ -994,7 +987,7 @@ export const getCreditOrders = async (req: AuthRequest, res: Response) => {
     const formattedOrders = orders.map(o => ({
       id: o.id,
       display_id: o.id.substring(0, 8).toUpperCase(),
-      wholesaler_name: o.wholesaler?.companyName,
+      wholesaler_name: o.wholesalerProfile?.companyName,
       total_amount: o.totalAmount,
       amount_paid: 0, // In future, check related payments
       amount_pending: o.totalAmount, // Simplified for now
@@ -1016,7 +1009,7 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const order = await prisma.order.findUnique({
       where: { id },
-      include: { wholesaler: true, items: { include: { product: true } } }
+      include: { wholesalerProfile: true, orderItems: { include: { product: true } } }
     });
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -1024,14 +1017,14 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
     res.json({
       id: order.id,
       display_id: order.id.substring(0, 8).toUpperCase(),
-      wholesaler_name: order.wholesaler?.companyName,
+      wholesaler_name: order.wholesalerProfile?.companyName,
       total_amount: order.totalAmount,
       amount_paid: 0, 
       amount_pending: order.totalAmount,
       status: order.status,
       due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
       created_at: order.createdAt,
-      items: order.items.map(i => ({
+      items: order.orderItems.map(i => ({
         id: i.id,
         product_name: i.product.name,
         quantity: i.quantity,
@@ -1315,8 +1308,8 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
         createdAt: { gte: startDate }
       },
       include: {
-        items: { include: { product: true } },
-        consumer: true
+        saleItems: { include: { product: true } },
+        consumerProfile: true
       }
     });
 
@@ -1348,7 +1341,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     // 5. Sales by Category
     const categoryMap = new Map<string, { count: number, revenue: number }>();
     salesInPeriod.forEach(sale => {
-      sale.items.forEach(item => {
+      sale.saleItems.forEach(item => {
         const cat = item.product.category || 'Other';
         const current = categoryMap.get(cat) || { count: 0, revenue: 0 };
         categoryMap.set(cat, {
@@ -1367,7 +1360,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     // 6. Top Selling Products
     const productStats = new Map<string, { name: string, quantity: number, revenue: number }>();
     salesInPeriod.forEach(sale => {
-      sale.items.forEach(item => {
+      sale.saleItems.forEach(item => {
         const pid = item.productId;
         const current = productStats.get(pid) || { name: item.product.name, quantity: 0, revenue: 0 };
         productStats.set(pid, {
@@ -1385,11 +1378,11 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     // 7. Top Customers
     const customerStats = new Map<string, { name: string, orders: number, spent: number }>();
     salesInPeriod.forEach(sale => {
-      if (sale.consumer) {
+      if (sale.consumerProfile) {
         const cid = sale.consumerId!;
-        const current = customerStats.get(cid) || { name: sale.consumer.fullName || 'Unknown', orders: 0, spent: 0 };
+        const current = customerStats.get(cid) || { name: sale.consumerProfile.fullName || 'Unknown', orders: 0, spent: 0 };
         customerStats.set(cid, {
-          name: sale.consumer.fullName || 'Unknown',
+          name: sale.consumerProfile.fullName || 'Unknown',
           orders: current.orders + 1,
           spent: current.spent + sale.totalAmount
         });

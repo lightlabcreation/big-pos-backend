@@ -1,0 +1,11 @@
+[2026-01-08T06:57:40.830Z] SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+    at JSON.parse (<anonymous>)
+    at parse (C:\Users\asus\OneDrive\Documents\company\backend\node_modules\body-parser\lib\types\json.js:74:19)
+    at C:\Users\asus\OneDrive\Documents\company\backend\node_modules\body-parser\lib\read.js:163:18
+    at AsyncResource.runInAsyncScope (node:async_hooks:211:14)
+    at invokeCallback (C:\Users\asus\OneDrive\Documents\company\backend\node_modules\raw-body\index.js:238:16)
+    at done (C:\Users\asus\OneDrive\Documents\company\backend\node_modules\raw-body\index.js:227:7)
+    at IncomingMessage.onEnd (C:\Users\asus\OneDrive\Documents\company\backend\node_modules\raw-body\index.js:287:7)
+    at IncomingMessage.emit (node:events:518:28)
+    at IncomingMessage.emit (node:domain:489:12)
+    at endReadableNT (node:internal/streams/readable:1698:12)

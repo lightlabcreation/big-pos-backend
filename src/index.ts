@@ -6,19 +6,60 @@ import storeRoutes from './routes/storeRoutes';
 import retailerRoutes from './routes/retailerRoutes';
 import wholesalerRoutes from './routes/wholesalerRoutes';
 import employeeRoutes from './routes/employeeRoutes';
-import adminRoutes from './routes/adminRoutes';
-import nfcRoutes from './routes/nfcRoutes';
+// import adminRoutes from './routes/adminRoutes';
+// import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
+import projectRoutes from './routes/projectRoutes';
+import trainingRoutes from './routes/trainingRoutes';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 9000;
 
+// CORS Configuration
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3062", 
+  "http://localhost:3063",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3062",
+  "http://127.0.0.1:3063",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://big-company-frontend.vercel.app"
+];
+
 app.use(cors({
-  origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "http://localhost:5173", "http://localhost:9000"],
-  credentials: true
+  origin: (origin, callback) => {
+    // console.log('Checking origin:', origin);
+    if (!origin) return callback(null, true);
+    
+    // Check if it matches allowedOrigins or is any localhost/127.0.0.1
+    const isLocal = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:');
+    
+    if (allowedOrigins.includes(origin) || isLocal) {
+      callback(null, true);
+    } else {
+      console.warn('Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Handle preflight requests explicitly
+// In Express 5, global cors middleware handles this, and '*' syntax is strict
+// app.options('*', cors());
+
+// Request Logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(express.json());
 
 // Routes
@@ -28,8 +69,14 @@ app.use('/wholesaler/auth', authRoutes);
 app.use('/admin/auth', authRoutes);
 app.use('/employee/auth', authRoutes);
 
+app.use('/employee', employeeRoutes);
+app.use('/employee', projectRoutes);
+app.use('/employee', trainingRoutes);
+
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
+app.use('/wholesaler', wholesalerRoutes);
+// app.use('/admin', adminRoutes);
 import debugRoutes from './routes/debugRoutes';
 
 // ... imports

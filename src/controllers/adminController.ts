@@ -147,7 +147,7 @@ export const createWholesaler = async (req: AuthRequest, res: Response) => {
 export const getLoans = async (req: AuthRequest, res: Response) => {
   try {
     const loans = await prisma.loan.findMany({
-      include: { consumer: { include: { user: true } } }
+      include: { consumerProfile: { include: { user: true } } }
     });
     res.json({ loans });
   } catch (error: any) {
@@ -159,7 +159,7 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
 export const getNFCCards = async (req: AuthRequest, res: Response) => {
   try {
     const cards = await prisma.nfcCard.findMany({
-      include: { consumer: { include: { user: true } } }
+      include: { consumerProfile: { include: { user: true } } }
     });
     res.json({ cards });
   } catch (error: any) {
@@ -514,10 +514,10 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
     const products = await prisma.product.findMany({
       include: {
-        retailer: {
+        retailerProfile: {
           select: { shopName: true }
         },
-        wholesaler: {
+        wholesalerProfile: {
           select: { companyName: true }
         }
       },

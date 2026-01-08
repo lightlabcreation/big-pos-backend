@@ -97,6 +97,7 @@ function seed() {
         console.log('✅ Retailer created');
         // Create Consumer
         const consumerPin = yield (0, auth_1.hashPassword)('1234');
+        const consumerPassword = yield (0, auth_1.hashPassword)('1234'); // Same as PIN for simplicity
         const consumer = yield prisma_1.default.user.upsert({
             where: { phone: '250788123456' },
             update: {},
@@ -104,6 +105,7 @@ function seed() {
                 phone: '250788123456',
                 email: 'consumer@bigcompany.rw',
                 pin: consumerPin,
+                password: consumerPassword, // Added password for email/password login
                 name: 'Jane Consumer',
                 role: 'consumer',
                 consumerProfile: {
@@ -115,6 +117,28 @@ function seed() {
             }
         });
         console.log('✅ Consumer created');
+        // Create Consumer 2 (for demo credentials in frontend)
+        const consumer2Pin = yield (0, auth_1.hashPassword)('1234');
+        const consumer2Password = yield (0, auth_1.hashPassword)('1234');
+        const consumer2 = yield prisma_1.default.user.upsert({
+            where: { phone: '250788100001' },
+            update: {},
+            create: {
+                phone: '250788100001',
+                email: 'consumer2@bigcompany.rw',
+                pin: consumer2Pin,
+                password: consumer2Password,
+                name: 'Demo Consumer',
+                role: 'consumer',
+                consumerProfile: {
+                    create: {
+                        walletBalance: 10000,
+                        rewardsPoints: 50
+                    }
+                }
+            }
+        });
+        console.log('✅ Consumer 2 created');
         // Get profiles
         const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
             where: { userId: wholesaler.id }

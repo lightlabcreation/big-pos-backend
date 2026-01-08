@@ -55,7 +55,7 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
 
     const orders = await prisma.sale.findMany({
       where: { consumerId: consumerProfile.id },
-      include: { items: { include: { product: true } }, retailer: true }
+      include: { saleItems: { include: { product: true } }, retailerProfile: true }
     });
 
     res.json({ orders });

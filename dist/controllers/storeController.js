@@ -69,7 +69,7 @@ const getMyOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         }
         const orders = yield prisma_1.default.sale.findMany({
             where: { consumerId: consumerProfile.id },
-            include: { items: { include: { product: true } }, retailer: true }
+            include: { saleItems: { include: { product: true } }, retailerProfile: true }
         });
         res.json({ orders });
     }

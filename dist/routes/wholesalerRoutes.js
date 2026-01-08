@@ -1,53 +1,56 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const wholesalerController_1 = require("../controllers/wholesalerController");
+const retailersController_1 = require("../controllers/retailersController");
+const managementController_1 = require("../controllers/managementController");
+const profileController_1 = require("../controllers/profileController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const wholesalerController = __importStar(require("../controllers/wholesalerController"));
 const router = (0, express_1.Router)();
-// All wholesaler routes require wholesaler authentication
 router.use(authMiddleware_1.authenticate);
-router.use((0, authMiddleware_1.authorize)('wholesaler'));
 // Dashboard
-router.get('/dashboard/stats', wholesalerController.getDashboardStats);
+router.get('/dashboard', wholesalerController_1.getDashboardStats);
+router.get('/dashboard/stats', wholesalerController_1.getDashboardStats);
 // Inventory
-router.get('/inventory', wholesalerController.getInventory);
-router.post('/inventory', wholesalerController.createProduct);
-// Retailer Orders
-router.get('/retailer-orders', wholesalerController.getRetailerOrders);
-router.put('/retailer-orders/:id/status', wholesalerController.updateOrderStatus);
-// Credit Requests
-router.get('/credit-requests', wholesalerController.getCreditRequests);
+router.get('/inventory', wholesalerController_1.getInventory);
+router.get('/inventory/stats', wholesalerController_1.getInventoryStats);
+router.get('/inventory/categories', wholesalerController_1.getCategories);
+router.post('/inventory', wholesalerController_1.createProduct);
+router.put('/inventory/:id', wholesalerController_1.updateProduct);
+router.post('/inventory/:id/stock', wholesalerController_1.updateStock);
+router.put('/inventory/:id/price', wholesalerController_1.updatePrice);
+router.delete('/inventory/:id', wholesalerController_1.deleteProduct);
+// Orders
+router.get('/retailer-orders', wholesalerController_1.getRetailerOrders);
+router.get('/retailer-orders/stats', wholesalerController_1.getRetailerOrders);
+router.get('/retailer-orders/:id', wholesalerController_1.getOrder);
+router.put('/retailer-orders/:id/status', wholesalerController_1.updateOrderStatus);
+// Retailers
+router.get('/retailers', retailersController_1.getRetailers);
+router.get('/retailers/stats', retailersController_1.getRetailerStats);
+router.get('/retailers/:id', retailersController_1.getRetailerById);
+router.get('/retailers/:id/orders', retailersController_1.getRetailerOrdersById);
+router.put('/retailers/:id/credit-limit', retailersController_1.updateRetailerCreditLimit);
+router.put('/retailers/:id/status', retailersController_1.blockRetailer);
+// Suppliers
+router.get('/supplier-orders', retailersController_1.getSupplierOrders);
+router.get('/suppliers', retailersController_1.getSuppliers);
+// Management - Suppliers & Profit Invoices
+router.get('/management/stats', managementController_1.getManagementStats);
+router.get('/management/suppliers', managementController_1.getManagementSuppliers);
+router.get('/management/suppliers/:id', managementController_1.getSupplierDetails);
+router.post('/management/suppliers', managementController_1.createSupplier);
+router.put('/management/suppliers/:id', managementController_1.updateSupplier);
+router.delete('/management/suppliers/:id', managementController_1.deleteSupplier);
+router.get('/management/profit-invoices', managementController_1.getProfitInvoices);
+router.get('/management/profit-invoices/:id', managementController_1.getProfitInvoiceDetails);
+router.put('/management/profit-invoices/:id/status', managementController_1.updateInvoiceStatus);
+// Profile & Settings
+router.get('/profile', profileController_1.getWholesalerProfile);
+router.put('/profile', profileController_1.updateWholesalerProfile);
+router.put('/settings', profileController_1.updateWholesalerSettings);
+// Credit Management
+router.get('/credit-requests', retailersController_1.getCreditRequestsWithStats);
+router.post('/credit-requests/:id/approve', retailersController_1.approveCreditRequest);
+router.post('/credit-requests/:id/reject', retailersController_1.rejectCreditRequest);
 exports.default = router;

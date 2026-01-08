@@ -33,7 +33,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       prisma.order.findMany({
         where: { wholesalerId: wholesalerProfile.id },
         include: {
-          retailer: {
+          retailerProfile: {
             include: { user: true }
           }
         }
@@ -55,7 +55,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       // Pending credit requests
       prisma.creditRequest.findMany({
         where: {
-          retailer: {
+          retailerProfile: {
             orders: {
               some: {
                 wholesalerId: wholesalerProfile.id
@@ -137,7 +137,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     allOrders.forEach(order => {
       const retailerId = order.retailerId;
       if (!retailerStatsMap[retailerId]) {
-        const name = order.retailer.shopName || order.retailer.user.name || `Retailer ${retailerId.substring(0, 5)}`;
+        const name = order.retailerProfile.shopName || order.retailerProfile.user.name || `Retailer ${retailerId.substring(0, 5)}`;
         retailerStatsMap[retailerId] = { name, orders: 0, revenue: 0 };
       }
       retailerStatsMap[retailerId].orders += 1;
@@ -609,10 +609,10 @@ export const getRetailerOrders = async (req: AuthRequest, res: Response) => {
     const orders = await prisma.order.findMany({
       where: { wholesalerId: wholesalerProfile.id },
       include: {
-        items: {
+        orderItems: {
           include: { product: true }
         },
-        retailer: {
+        retailerProfile: {
           include: { user: true }
         }
       },
@@ -647,10 +647,10 @@ export const getOrder = async (req: AuthRequest, res: Response) => {
         wholesalerId: wholesalerProfile.id
       },
       include: {
-        items: {
+        orderItems: {
           include: { product: true }
         },
-        retailer: {
+        retailerProfile: {
           include: { user: true }
         }
       }

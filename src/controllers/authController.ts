@@ -7,11 +7,11 @@ export const register = async (req: Request, res: Response) => {
     const { email, password, phone, pin, role, first_name, last_name, business_name, shop_name, company_name } = req.body;
 
     // Determine role from URL if not provided
-    let targetRole = role;
-    if (!targetRole) {
-      if (req.baseUrl.includes('store')) targetRole = 'consumer';
-      else if (req.baseUrl.includes('retailer')) targetRole = 'retailer';
-      else if (req.baseUrl.includes('wholesaler')) targetRole = 'wholesaler';
+    let targetuser_role = role;
+    if (!targetuser_role) {
+      if (req.baseUrl.includes('store')) targetuser_role = 'consumer';
+      else if (req.baseUrl.includes('retailer')) targetuser_role = 'retailer';
+      else if (req.baseUrl.includes('wholesaler')) targetuser_role = 'wholesaler';
     }
 
     // Check existing user
@@ -37,19 +37,19 @@ export const register = async (req: Request, res: Response) => {
         phone,
         password: hashedPassword,
         pin: hashedPin, // Store pin (hashed)
-        role: targetRole,
+        role: targetuser_role,
         name: first_name ? `${first_name} ${last_name || ''}`.trim() : (business_name || company_name || shop_name),
       }
     });
 
     // Create Profile
-    if (targetRole === 'consumer') {
+    if (targetuser_role === 'consumer') {
       await prisma.consumerProfile.create({
         data: {
           userId: user.id
         }
       });
-    } else if (targetRole === 'retailer') {
+    } else if (targetuser_role === 'retailer') {
       await prisma.retailerProfile.create({
         data: {
           userId: user.id,
@@ -57,7 +57,7 @@ export const register = async (req: Request, res: Response) => {
           address: req.body.address
         }
       });
-    } else if (targetRole === 'wholesaler') {
+    } else if (targetuser_role === 'wholesaler') {
       await prisma.wholesalerProfile.create({
         data: {
           userId: user.id,
@@ -86,13 +86,13 @@ export const login = async (req: Request, res: Response) => {
   try {
     const { email, password, phone, pin } = req.body;
 
-    let targetRole = req.body.role;
-    if (!targetRole) {
-      if (req.baseUrl.includes('store')) targetRole = 'consumer';
-      else if (req.baseUrl.includes('retailer')) targetRole = 'retailer';
-      else if (req.baseUrl.includes('wholesaler')) targetRole = 'wholesaler';
-      else if (req.baseUrl.includes('employee')) targetRole = 'employee';
-      else if (req.baseUrl.includes('admin')) targetRole = 'admin';
+    let targetuser_role = req.body.role;
+    if (!targetuser_role) {
+      if (req.baseUrl.includes('store')) targetuser_role = 'consumer';
+      else if (req.baseUrl.includes('retailer')) targetuser_role = 'retailer';
+      else if (req.baseUrl.includes('wholesaler')) targetuser_role = 'wholesaler';
+      else if (req.baseUrl.includes('employee')) targetuser_role = 'employee';
+      else if (req.baseUrl.includes('admin')) targetuser_role = 'admin';
     }
 
     // Find User
@@ -102,7 +102,7 @@ export const login = async (req: Request, res: Response) => {
           { email: email || undefined },
           { phone: phone || undefined }
         ],
-        role: targetRole // Ensure role matches
+        role: targetuser_role // Ensure role matches
       },
       include: {
         consumerProfile: true,
@@ -118,7 +118,7 @@ export const login = async (req: Request, res: Response) => {
 
     // Verify Password or PIN
     let valid = false;
-    if (targetRole === 'consumer') {
+    if (targetuser_role === 'consumer') {
       if (user.pin && pin && await comparePassword(pin, user.pin)) valid = true;
       else if (user.password && password && await comparePassword(password, user.password)) valid = true;
     } else {
@@ -139,7 +139,7 @@ export const login = async (req: Request, res: Response) => {
       access_token: token,
     };
 
-    if (targetRole === 'consumer') {
+    if (targetuser_role === 'consumer') {
       responseData.customer = {
         id: user.id,
         email: user.email,
@@ -148,7 +148,7 @@ export const login = async (req: Request, res: Response) => {
         last_name: user.name?.split(' ').slice(1).join(' '),
         ...user.consumerProfile
       };
-    } else if (targetRole === 'retailer') {
+    } else if (targetuser_role === 'retailer') {
       responseData.retailer = {
         id: user.id,
         email: user.email,
@@ -157,7 +157,7 @@ export const login = async (req: Request, res: Response) => {
         name: user.name,
         ...user.retailerProfile
       };
-    } else if (targetRole === 'wholesaler') {
+    } else if (targetuser_role === 'wholesaler') {
       responseData.wholesaler = {
         id: user.id,
         email: user.email,
@@ -166,7 +166,7 @@ export const login = async (req: Request, res: Response) => {
         name: user.name,
         ...user.wholesalerProfile
       };
-    } else if (targetRole === 'employee') {
+    } else if (targetuser_role === 'employee') {
       responseData.employee = {
         id: user.id,
         email: user.email,
@@ -174,7 +174,7 @@ export const login = async (req: Request, res: Response) => {
         name: user.name,
         ...user.employeeProfile
       };
-    } else if (targetRole === 'admin') {
+    } else if (targetuser_role === 'admin') {
       responseData.admin = {
         id: user.id,
         email: user.email,
