@@ -774,3 +774,494 @@ enum user_role {
   employee
   admin
 }
+
+model User {
+  id        String   @id @default(uuid())
+  email     String?  @unique
+  phone     String?  @unique
+  password  String?
+  pin       String?
+  name      String?
+  role      Role
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  retailerProfile   RetailerProfile?
+  wholesalerProfile WholesalerProfile?
+  employeeProfile   EmployeeProfile?
+  consumerProfile   ConsumerProfile?
+
+  notifications     Notification[]
+  sentMessages      Message[] @relation("SentMessages")
+  receivedMessages  Message[] @relation("ReceivedMessages")
+}
+
+model RetailerProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  shopName      String
+  address       String?
+  creditLimit   Float    @default(0)
+  walletBalance Float    @default(0)
+  
+  inventory       Product[]
+  orders          Order[]
+  sales           Sale[]
+  branches        Branch[]
+  nfcCards        NfcCard[]
+  credit          RetailerCredit?
+  creditRequests  CreditRequest[]
+}
+
+model WholesalerProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  companyName   String
+  contactPerson String?
+  tinNumber     String?
+  address       String?
+  
+  inventory      Product[]
+  receivedOrders Order[]
+  suppliers      Supplier[]
+  supplierPayments SupplierPayment[]
+  settings       WholesalerSettings?
+}
+
+model WholesalerSettings {
+  id                String   @id @default(uuid())
+  wholesalerId      String   @unique
+  wholesaler        WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+  
+  // Notification Preferences
+  pushNotifications Boolean  @default(true)
+  emailNotifications Boolean @default(true)
+  smsNotifications  Boolean  @default(true)
+  ussdAlerts        Boolean  @default(false)
+  
+  // USSD Configuration
+  ussdBusinessCode  String   @default("WHL001")
+  ussdLanguage      String   @default("en")
+  ussdAutoResponse  Boolean  @default(true)
+  
+  // Business Settings
+  paymentTerms      String   @default("net30")
+  defaultCreditLimit Float    @default(50000)
+  acceptedPayments  Json?    // Array of methods like ["wallet", "momo"]
+  
+  // POS & Hardware
+  receiptPrinter    String   @default("bluetooth")
+  barcodeScanner    String   @default("camera")
+  nfcEnabled        Boolean  @default(true)
+  
+  updatedAt         DateTime @updatedAt
+}
+
+model EmployeeProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employeeNumber String   @unique
+  department     String
+  position       String
+  salary         Float    @default(0)
+  joiningDate    DateTime @default(now())
+  status         String   @default("active") // active, inactive, on_leave
+  bankAccount    String?
+}
+
+model ConsumerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+  fullName        String?
+  address         String?
+  landmark        String?
+  isVerified      Boolean  @default(false)
+  membershipType  String   @default("standard")
+  walletBalance   Float    @default(0)
+  rewardsPoints   Float    @default(0)
+  
+  orders          Sale[]
+  nfcCards        NfcCard[]
+  loans           Loan[]
+  wallets         Wallet[]
+  gasMeters       GasMeter[]
+  gasTopups       GasTopup[]
+  gasRewards      GasReward[]
+  customerOrders  CustomerOrder[]
+  settings        ConsumerSettings?
+}
+
+model Product {
+  id                String   @id @default(uuid())
+  name              String
+  description       String?
+  sku               String?
+  category          String
+  price             Float    // Wholesaler selling price (for backward compatibility)
+  costPrice         Float?   // Supplier cost price
+  stock             Int      @default(0)
+  unit              String?  // e.g., "kg", "liters", "units", "packs"
+  lowStockThreshold Int?     // Alert when stock falls below this level
+  invoiceNumber     String?  // Wholesaler invoice number for retailer reference
+  barcode           String?  // Product barcode
+  status            String   @default("active") // active, inactive
+  
+  retailerId   String?
+  retailer     RetailerProfile? @relation(fields: [retailerId], references: [id])
+  wholesalerId String?
+  wholesaler   WholesalerProfile? @relation(fields: [wholesalerId], references: [id])
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  
+  orderItems   OrderItem[]
+  saleItems    SaleItem[]
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Order {
+  id            String   @id @default(uuid())
+  retailerId    String
+  retailer      RetailerProfile @relation(fields: [retailerId], references: [id])
+  wholesalerId  String
+  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+  status        String
+  totalAmount   Float
+  items         OrderItem[]
+  profitInvoice ProfitInvoice?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float
+}
+
+model Sale {
+  id            String   @id @default(uuid())
+  retailerId    String
+  retailer      RetailerProfile @relation(fields: [retailerId], references: [id])
+  consumerId    String?
+  consumer      ConsumerProfile? @relation(fields: [consumerId], references: [id])
+  branchId      String?
+  branch        Branch?  @relation(fields: [branchId], references: [id])
+  status        String
+  totalAmount   Float
+  paymentMethod String
+  items         SaleItem[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SaleItem {
+  id        String   @id @default(uuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float
+}
+
+model Branch {
+  id         String   @id @default(uuid())
+  retailerId String
+  retailer   RetailerProfile @relation(fields: [retailerId], references: [id])
+  name       String
+  location   String?
+  sales      Sale[]
+  terminals  Terminal[]
+}
+
+model Terminal {
+  id           String   @id @default(uuid())
+  branchId     String
+  branch       Branch   @relation(fields: [branchId], references: [id])
+  name         String
+  serialNumber String   @unique
+}
+
+model NfcCard {
+  id          String   @id @default(uuid())
+  uid         String   @unique
+  pin         String?
+  status      String
+  consumerId  String?
+  consumer    ConsumerProfile? @relation(fields: [consumerId], references: [id])
+  retailerId  String?
+  retailer    RetailerProfile? @relation(fields: [retailerId], references: [id])
+  balance     Float    @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model Loan {
+  id          String   @id @default(uuid())
+  consumerId  String
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
+  amount      Float
+  status      String
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  content    String
+  createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Consumer Wallet System
+model Wallet {
+  id          String   @id @default(uuid())
+  consumerId  String
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
+  type        String   // "dashboard_wallet" or "credit_wallet"
+  balance     Float    @default(0)
+  currency    String   @default("RWF")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  transactions WalletTransaction[]
+  
+  @@unique([consumerId, type])
+}
+
+model WalletTransaction {
+  id          String   @id @default(uuid())
+  walletId    String
+  wallet      Wallet   @relation(fields: [walletId], references: [id])
+  type        String   // "credit", "debit", "topup", "refund"
+  amount      Float
+  description String?
+  reference   String?  // Order ID or transaction reference
+  status      String   @default("completed") // pending, completed, failed
+  createdAt   DateTime @default(now())
+}
+
+// Gas Service
+model GasMeter {
+  id          String   @id @default(uuid())
+  consumerId  String
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
+  meterNumber String   @unique
+  aliasName   String?
+  ownerName   String?
+  ownerPhone  String?
+  status      String   @default("active") // active, inactive, removed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  topups      GasTopup[]
+}
+
+model GasTopup {
+  id          String   @id @default(uuid())
+  consumerId  String
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
+  meterId     String
+  meter       GasMeter @relation(fields: [meterId], references: [id])
+  amount      Float
+  units       Float    // cubic meters (m3)
+  currency    String   @default("RWF")
+  status      String   @default("completed")
+  orderId     String?  // Link to CustomerOrder
+  createdAt   DateTime @default(now())
+}
+
+model GasReward {
+  id          String   @id @default(uuid())
+  consumerId  String
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
+  units       Float    // m3 earned
+  source      String   // "purchase", "referral", "bonus"
+  reference   String?  // Order ID or source reference
+  createdAt   DateTime @default(now())
+}
+
+// Customer Orders (separate from retailer/wholesaler orders)
+model CustomerOrder {
+  id          String   @id @default(uuid())
+  consumerId  String
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
+  orderType   String   // "gas", "shop"
+  status      String   // "active", "completed", "credit", "cancelled"
+  amount      Float
+  currency    String   @default("RWF")
+  items       Json?    // Store order items as JSON
+  metadata    Json?    // Additional data
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// WHOLESALE MANAGEMENT SYSTEM TABLES
+// ============================================
+
+// Suppliers - Companies that supply products to wholesaler
+model Supplier {
+  id            String   @id @default(uuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        String   @default("active") // active, inactive
+  wholesalerId  String
+  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  products      Product[]
+  payments      SupplierPayment[]
+}
+
+// Supplier Payments - Track payments made to suppliers
+model SupplierPayment {
+  id            String   @id @default(uuid())
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  amount        Float
+  paymentDate   DateTime
+  reference     String?
+  status        String   @default("completed") // pending, completed
+  notes         String?
+  wholesalerId  String
+  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+  createdAt     DateTime @default(now())
+}
+
+// Retailer Credit - Credit limits and usage for retailers
+model RetailerCredit {
+  id              String   @id @default(uuid())
+  retailerId      String   @unique
+  retailer        RetailerProfile @relation(fields: [retailerId], references: [id])
+  creditLimit     Float    @default(0)
+  usedCredit      Float    @default(0)
+  availableCredit Float    @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+// Credit Requests - Retailers requesting credit increase
+model CreditRequest {
+  id          String   @id @default(uuid())
+  retailerId  String
+  retailer    RetailerProfile @relation(fields: [retailerId], references: [id])
+  amount      Float
+  reason      String?
+  status      String   @default("pending") // pending, approved, rejected
+  reviewedAt  DateTime?
+  reviewNotes String?
+  createdAt   DateTime @default(now())
+}
+
+// Profit Invoices - Track profit made on each order
+model ProfitInvoice {
+  id              String   @id @default(uuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id])
+  profitAmount    Float
+  invoiceNumber   String   @unique
+  generatedAt     DateTime @default(now())
+}
+
+// ============================================
+// RECRUITMENT SYSTEM
+// ============================================
+
+model JobPosting {
+  id           String   @id @default(uuid())
+  title        String
+  department   String
+  type         String   // full_time, part_time, contract
+  salaryMin    Float
+  salaryMax    Float
+  location     String
+  description  String   @db.Text
+  status       String   @default("open") // open, closed
+  postedDate   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  applications JobApplication[]
+}
+
+model JobApplication {
+  id          String     @id @default(uuid())
+  jobId       String
+  job         JobPosting @relation(fields: [jobId], references: [id])
+  name        String
+  email       String
+  phone       String
+  resumeUrl   String?
+  status      String     @default("applied") // applied, screening, interview, offer, hired, rejected
+  appliedDate DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// ============================================
+// DEALS / SALES PIPELINE
+// ============================================
+
+model Deal {
+  id                String   @id @default(uuid())
+  title             String
+  clientName        String
+  value             Float
+  stage             String   // lead, qualified, proposal, negotiation, closed_won, closed_lost
+  probability       Float    // 0-100
+  owner             String   // Name of employee who owns this deal
+  expectedCloseDate DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Consumer Settings - Notification preferences for consumers
+model ConsumerSettings {
+  id                  String          @id @default(uuid())
+  consumerId          String          @unique
+  consumer            ConsumerProfile @relation(fields: [consumerId], references: [id])
+  
+  // Notification Preferences
+  pushNotifications   Boolean         @default(true)
+  emailNotifications  Boolean         @default(true)
+  smsNotifications    Boolean         @default(false)
+  
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}

@@ -31,23 +31,8 @@ const allowedOrigins = [
 ];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    // console.log('Checking origin:', origin);
-    if (!origin) return callback(null, true);
-    
-    // Check if it matches allowedOrigins or is any localhost/127.0.0.1
-    const isLocal = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:');
-    
-    if (allowedOrigins.includes(origin) || isLocal) {
-      callback(null, true);
-    } else {
-      console.warn('Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "https://big-pos.netlify.app", "http://localhost:5173", "http://localhost:3062", "http://localhost:9000"],
+  credentials: true
 }));
 
 // Handle preflight requests explicitly
@@ -92,7 +77,7 @@ app.get('/', (req, res) => {
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('SERVER ERROR:', err);
-  
+
   // Log to file
   try {
     const fs = require('fs');
@@ -104,7 +89,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     console.error('Failed to write to error log:', fsError);
   }
 
-  res.status(500).json({ 
+  res.status(500).json({
     success: false,
     message: 'Internal Server Error',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
