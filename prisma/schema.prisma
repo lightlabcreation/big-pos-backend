@@ -7,6 +7,80 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                               String             @id @default(uuid())
+  email                            String?            @unique
+  phone                            String?            @unique
+  password                         String?
+  pin                              String?
+  name                             String?
+  role                             Role
+  isActive                         Boolean            @default(true)
+  createdAt                        DateTime           @default(now())
+  updatedAt                        DateTime           @updatedAt
+  consumerProfile                  ConsumerProfile?
+  employeeProfile                  EmployeeProfile?
+  message_message_receiverIdTouser Message[]          @relation("message_receiverIdTouser")
+  message_message_senderIdTouser   Message[]          @relation("message_senderIdTouser")
+  notifications                    Notification[]
+  retailerProfile                  RetailerProfile?
+  wholesalerProfile                WholesalerProfile?
+}
+
+model RetailerProfile {
+  id             String          @id @default(uuid())
+  userId         String          @unique
+  shopName       String
+  address        String?
+  creditLimit    Float           @default(0)
+  walletBalance  Float           @default(0)
+  isVerified     Boolean         @default(false)
+  branches       Branch[]
+  creditRequests CreditRequest[]
+  nfcCards       NfcCard[]
+  orders         Order[]
+  inventory      Product[]
+  credit         RetailerCredit?
+  user           User            @relation(fields: [userId], references: [id])
+  sales          Sale[]
+}
+
+model WholesalerProfile {
+  id               String              @id @default(uuid())
+  userId           String              @unique
+  companyName      String
+  contactPerson    String?
+  tinNumber        String?
+  address          String?
+  receivedOrders   Order[]
+  inventory        Product[]
+  suppliers        Supplier[]
+  supplierPayments SupplierPayment[]
+  user             User                @relation(fields: [userId], references: [id])
+  settings         WholesalerSettings?
+}
+
+model WholesalerSettings {
+  id                 String            @id @default(uuid())
+  wholesalerId       String            @unique
+  pushNotifications  Boolean           @default(true)
+  emailNotifications Boolean           @default(true)
+  smsNotifications   Boolean           @default(true)
+  ussdAlerts         Boolean           @default(false)
+  ussdBusinessCode   String            @default("WHL001")
+  ussdLanguage       String            @default("en")
+  ussdAutoResponse   Boolean           @default(true)
+  paymentTerms       String            @default("net30")
+  defaultCreditLimit Float             @default(50000)
+  acceptedPayments   Json?
+  receiptPrinter     String            @default("bluetooth")
+  barcodeScanner     String            @default("camera")
+  nfcEnabled         Boolean           @default(true)
+  updatedAt          DateTime          @updatedAt
+  wholesaler         WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+}
+
+
 model Attendance {
   id              String          @id @default(uuid())
   employeeId      String
@@ -23,6 +97,24 @@ model Attendance {
 
   @@index([employeeId], map: "Attendance_employeeId_fkey")
   @@map("attendance")
+}
+
+model LeaveRequest {
+  id              String          @id @default(uuid())
+  employeeId      String
+  type            String
+  startDate       DateTime
+  endDate         DateTime
+  reason          String?
+  status          String          @default("pending")
+  approvedBy      String?
+  rejectionReason String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  employeeProfile EmployeeProfile @relation(fields: [employeeId], references: [id], map: "LeaveRequest_employeeId_fkey")
+
+  @@index([employeeId], map: "LeaveRequest_employeeId_fkey")
+  @@map("leaverequest")
 }
 
 model BillPayment {
@@ -139,9 +231,8 @@ model Deal {
   expectedCloseDate DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-
-  @@map("deal")
 }
+
 
 model EmployeeProfile {
   id             String         @id @default(uuid())
@@ -249,23 +340,6 @@ model JobPosting {
   @@map("jobposting")
 }
 
-model LeaveRequest {
-  id              String          @id @default(uuid())
-  employeeId      String
-  type            String
-  startDate       DateTime
-  endDate         DateTime
-  reason          String?
-  status          String          @default("pending")
-  approvedBy      String?
-  rejectionReason String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  employeeProfile EmployeeProfile @relation(fields: [employeeId], references: [id], map: "LeaveRequest_employeeId_fkey")
-
-  @@index([employeeId], map: "LeaveRequest_employeeId_fkey")
-  @@map("leaverequest")
-}
 
 model Loan {
   id              String          @id @default(uuid())
@@ -415,24 +489,6 @@ model RetailerCredit {
   @@map("retailercredit")
 }
 
-model RetailerProfile {
-  id             String          @id @default(uuid())
-  userId         String          @unique(map: "RetailerProfile_userId_key")
-  shopName       String
-  address        String?
-  creditLimit    Float           @default(0)
-  walletBalance  Float           @default(0)
-  branches       Branch[]
-  creditRequests CreditRequest[]
-  nfcCards       NfcCard[]
-  orders         Order[]
-  products       Product[]
-  retailerCredit RetailerCredit?
-  user           User            @relation(fields: [userId], references: [id], map: "RetailerProfile_userId_fkey")
-  sales          Sale[]
-
-  @@map("retailerprofile")
-}
 
 model Sale {
   id              String           @id @default(uuid())
@@ -518,27 +574,6 @@ model Terminal {
   @@map("terminal")
 }
 
-model User {
-  id                               String             @id @default(uuid())
-  email                            String?            @unique(map: "User_email_key")
-  phone                            String?            @unique(map: "User_phone_key")
-  password                         String?
-  pin                              String?
-  name                             String?
-  role                             user_role
-  isActive                         Boolean            @default(true)
-  createdAt                        DateTime           @default(now())
-  updatedAt                        DateTime           @updatedAt
-  consumerProfile                  ConsumerProfile?
-  employeeProfile                  EmployeeProfile?
-  message_message_receiverIdTouser Message[]          @relation("message_receiverIdTouser")
-  message_message_senderIdTouser   Message[]          @relation("message_senderIdTouser")
-  notifications                    Notification[]
-  retailerProfile                  RetailerProfile?
-  wholesalerProfile                WholesalerProfile?
-
-  @@map("user")
-}
 
 model Wallet {
   id                String              @id @default(uuid())
@@ -571,44 +606,6 @@ model WalletTransaction {
   @@map("wallettransaction")
 }
 
-model WholesalerProfile {
-  id                 String              @id @default(uuid())
-  userId             String              @unique(map: "WholesalerProfile_userId_key")
-  companyName        String
-  address            String?
-  contactPerson      String?
-  tinNumber          String?
-  orders             Order[]
-  products           Product[]
-  suppliers          Supplier[]
-  supplierPayments   SupplierPayment[]
-  user               User                @relation(fields: [userId], references: [id], map: "WholesalerProfile_userId_fkey")
-  wholesalerSettings WholesalerSettings?
-
-  @@map("wholesalerprofile")
-}
-
-model WholesalerSettings {
-  id                 String            @id @default(uuid())
-  wholesalerId       String            @unique(map: "WholesalerSettings_wholesalerId_key")
-  pushNotifications  Boolean           @default(true)
-  emailNotifications Boolean           @default(true)
-  smsNotifications   Boolean           @default(true)
-  ussdAlerts         Boolean           @default(false)
-  ussdBusinessCode   String            @default("WHL001")
-  ussdLanguage       String            @default("en")
-  ussdAutoResponse   Boolean           @default(true)
-  paymentTerms       String            @default("net30")
-  defaultCreditLimit Float             @default(50000)
-  acceptedPayments   String?           @db.LongText
-  receiptPrinter     String            @default("bluetooth")
-  barcodeScanner     String            @default("camera")
-  nfcEnabled         Boolean           @default(true)
-  updatedAt          DateTime          @updatedAt
-  wholesalerProfile  WholesalerProfile @relation(fields: [wholesalerId], references: [id], map: "WholesalerSettings_wholesalerId_fkey")
-
-  @@map("wholesalersettings")
-}
 
 model Project {
   id          String          @id @default(uuid())
@@ -791,4 +788,13 @@ model ConsumerSettings {
   
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+}
+
+
+enum Role {
+  consumer
+  retailer
+  wholesaler
+  employee
+  admin
 }

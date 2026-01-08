@@ -9,8 +9,7 @@ import employeeRoutes from './routes/employeeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
-import projectRoutes from './routes/projectRoutes';
-import trainingRoutes from './routes/trainingRoutes';
+import debugRoutes from './routes/debugRoutes';
 
 dotenv.config();
 
@@ -18,26 +17,10 @@ const app = express();
 const PORT = process.env.PORT || 9000;
 
 // CORS Configuration
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3062", 
-  "http://localhost:3063",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:3062",
-  "http://127.0.0.1:3063",
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "https://big-company-frontend.vercel.app"
-];
-
 app.use(cors({
   origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "https://big-pos.netlify.app", "http://localhost:5173", "http://localhost:3062", "http://localhost:9000"],
   credentials: true
 }));
-
-// Handle preflight requests explicitly
-// In Express 5, global cors middleware handles this, and '*' syntax is strict
-// app.options('*', cors());
 
 // Request Logger
 app.use((req, res, next) => {
@@ -55,20 +38,12 @@ app.use('/admin/auth', authRoutes);
 app.use('/employee/auth', authRoutes);
 
 app.use('/employee', employeeRoutes);
-app.use('/employee', projectRoutes);
-app.use('/employee', trainingRoutes);
-
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
 app.use('/wholesaler', wholesalerRoutes);
 app.use('/admin', adminRoutes);
-import debugRoutes from './routes/debugRoutes';
-
-// ... imports
-
 app.use('/wallet', walletRoutes);
 app.use('/debug', debugRoutes); // Public debug endpoint
-
 
 app.get('/', (req, res) => {
   res.send('Big Company API is running');
@@ -84,7 +59,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     const path = require('path');
     const logPath = path.join(__dirname, '../error.log');
     const timestamp = new Date().toISOString();
-    fs.appendFileSync(logPath, `[${timestamp}] ${err.stack || err}\n`);
+    fs.appendFileSync(logPath, `[${timestamp}] ${err.stack || err}\\n`);
   } catch (fsError) {
     console.error('Failed to write to error log:', fsError);
   }

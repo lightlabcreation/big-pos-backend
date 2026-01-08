@@ -9,10 +9,12 @@ import {
   createRetailer,
   updateRetailer,
   deleteRetailer,
+  verifyRetailer,
   getWholesalers,
   createWholesaler,
   updateWholesaler,
   deleteWholesaler,
+  updateWholesalerStatus,
   getLoans,
   getNFCCards,
   getCategories,
@@ -47,12 +49,14 @@ router.get('/retailers', getRetailers);
 router.post('/retailers', createRetailer);
 router.put('/retailers/:id', updateRetailer);
 router.delete('/retailers/:id', deleteRetailer);
+router.post('/retailers/:id/verify', verifyRetailer);
 
 // Wholesaler Routes
 router.get('/wholesalers', getWholesalers);
 router.post('/wholesalers', createWholesaler);
 router.put('/wholesalers/:id', updateWholesaler);
 router.delete('/wholesalers/:id', deleteWholesaler);
+router.post('/wholesalers/:id/status', updateWholesalerStatus);
 
 router.get('/loans', getLoans);
 router.get('/nfc-cards', getNFCCards);

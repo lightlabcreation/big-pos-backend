@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { 
-  getDashboardStats, 
-  getInventory, 
-  createProduct, 
+import {
+  getDashboardStats,
+  getInventory,
+  createProduct,
   updateProduct,
   getOrders,
+  getOrder,
   getBranches,
   createBranch,
   getWallet,
@@ -36,6 +37,7 @@ router.get('/inventory', getInventory);
 router.post('/inventory', createProduct);
 router.put('/inventory/:id', updateProduct);
 router.get('/orders', getOrders);
+router.get('/orders/:id', getOrder);
 router.post('/orders', createOrder); // Add this line
 router.get('/branches', getBranches);
 router.post('/branches', createBranch);

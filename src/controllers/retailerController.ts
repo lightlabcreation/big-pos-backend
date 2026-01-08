@@ -8,7 +8,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
     const retailerProfile = await prisma.retailerProfile.findUnique({
       where: { userId: req.user!.id },
-      include: { 
+      include: {
         orders: true // Orders to wholesalers
       }
     });
@@ -99,12 +99,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     }));
 
     // Hourly Sales Data (for chart)
-    const salesByHour = new Array(24).fill(0).map((_, i) => ({ 
-      name: `${i}:00`, 
-      sales: 0, 
-      customers: 0 
+    const salesByHour = new Array(24).fill(0).map((_, i) => ({
+      name: `${i}:00`,
+      sales: 0,
+      customers: 0
     }));
-    
+
     todaySales.forEach(sale => {
       const hour = new Date(sale.createdAt).getHours();
       if (salesByHour[hour]) {
@@ -136,7 +136,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     const topProductsDetails = await prisma.product.findMany({
       where: { id: { in: topProductIds } }
     });
-    
+
     const topProducts = topSellingItems.map(item => {
       const product = topProductsDetails.find(p => p.id === item.productId);
       return {
@@ -178,8 +178,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       creditLimit: retailerProfile.creditLimit,
       todaySales: todaySalesAmount,
       customersToday,
-      growth: { orders: 0, revenue: 0 }, 
-      
+      growth: { orders: 0, revenue: 0 },
+
       // Payment breakdown
       dashboardWalletRevenue: paymentStats['wallet'] || 0,
       creditWalletRevenue: paymentStats['credit'] || 0,
@@ -284,11 +284,11 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       // Find the order by ID (treating invoice_number as Order ID)
       let order = await prisma.order.findUnique({
         where: { id: invoice_number },
-      include: { 
-        orderItems: { 
-          include: { product: true } 
-        } 
-      }
+        include: {
+          orderItems: {
+            include: { product: true }
+          }
+        }
       });
 
       // Validates if the invoice number corresponds to a ProfitInvoice
@@ -304,9 +304,9 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 
       if (!order) {
 
-         return res.status(404).json({ error: `Invoice/Order not found. Received ID: ${invoice_number}` });
+        return res.status(404).json({ error: `Invoice/Order not found. Received ID: ${invoice_number}` });
       }
-      
+
       // Security check: ensure order belongs to this retailer
       if (order.retailerId !== retailerProfile.id) {
         return res.status(403).json({ error: 'Unauthorized: Invoice does not belong to you' });
@@ -319,7 +319,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         where: { retailerId: retailerProfile.id, invoiceNumber: invoice_number }
       });
       if (existing) {
-         return res.status(400).json({ error: 'Invoice already imported' });
+        return res.status(400).json({ error: 'Invoice already imported' });
       }
 
       const createdProducts = [];
@@ -416,13 +416,13 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 
     if (status) where.status = status;
     if (payment_status) where.paymentMethod = payment_status; // Mapping payment_status filter to paymentMethod
-    
+
     // Search by ID or Customer Name
     if (search) {
-       where.OR = [
-         { id: { contains: search as string } },
-         { consumer: { fullName: { contains: search as string } } }
-       ];
+      where.OR = [
+        { id: { contains: search as string } },
+        { consumer: { fullName: { contains: search as string } } }
+      ];
     }
 
     const sales = await prisma.sale.findMany({
@@ -455,9 +455,72 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       completed_at: sale.status === 'completed' ? sale.updatedAt.toISOString() : undefined
     }));
 
+
     res.json({ orders: formattedOrders, total });
   } catch (error: any) {
     console.error('Get orders error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get single order
+export const getOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
+    const { id } = req.params;
+
+    const sale = await prisma.sale.findFirst({
+      where: {
+        id,
+        retailerId: retailerProfile.id
+      },
+      include: {
+        consumerProfile: { include: { user: true } },
+        saleItems: { include: { product: true } }
+      }
+    });
+
+    if (!sale) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const formattedOrder = {
+      id: sale.id,
+      display_id: sale.id.substring(0, 8).toUpperCase(),
+      customer_name: sale.consumerProfile?.fullName || 'Walk-in Customer',
+      customer_phone: sale.consumerProfile?.user?.phone || 'N/A',
+      customer_email: sale.consumerProfile?.user?.email,
+      items: sale.saleItems.map(item => ({
+        id: item.id,
+        product_id: item.productId,
+        product_name: item.product.name,
+        sku: item.product.sku,
+        quantity: item.quantity,
+        unit_price: item.price,
+        total: item.price * item.quantity
+      })),
+      subtotal: sale.totalAmount, // Simplified
+      discount: 0,
+      total: sale.totalAmount,
+      status: sale.status,
+      payment_method: sale.paymentMethod,
+      payment_status: 'paid',
+      notes: '',
+      created_at: sale.createdAt.toISOString(),
+      updated_at: sale.updatedAt.toISOString(),
+      completed_at: sale.status === 'completed' ? sale.updatedAt.toISOString() : undefined
+    };
+
+    res.json({ order: formattedOrder });
+  } catch (error: any) {
+    console.error('Get order error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -629,22 +692,22 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Retailer profile not found' });
     }
 
-    const { 
-      items, 
-      payment_method, 
-      subtotal, 
-      tax_amount, 
-      discount, 
+    const {
+      items,
+      payment_method,
+      subtotal,
+      tax_amount,
+      discount,
       customer_phone,
-      payment_details 
+      payment_details
     } = req.body;
 
     // 1. Validate items and stock
     for (const item of items) {
       const product = await prisma.product.findUnique({ where: { id: item.product_id } });
       if (!product || product.stock < item.quantity) {
-        return res.status(400).json({ 
-          error: `Insufficient stock for product: ${product?.name || item.product_id}` 
+        return res.status(400).json({
+          error: `Insufficient stock for product: ${product?.name || item.product_id}`
         });
       }
     }
@@ -712,7 +775,7 @@ export const getDailySales = async (req: AuthRequest, res: Response) => {
 
     const totalSales = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
     const transactionCount = todaySales.length;
-    
+
     // Aggregation by payment method
     const paymentMethods = todaySales.reduce((acc, s) => {
       const method = s.paymentMethod;
@@ -726,7 +789,7 @@ export const getDailySales = async (req: AuthRequest, res: Response) => {
       mobile_payment_transactions: paymentMethods['mobile_money'] || 0,
       dashboard_wallet_transactions: paymentMethods['dashboard_wallet'] || 0,
       credit_wallet_transactions: paymentMethods['credit_wallet'] || 0,
-      gas_rewards_m3: 0, 
+      gas_rewards_m3: 0,
       gas_rewards_rwf: 0
     });
 
@@ -807,9 +870,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     // or strictly enforce items from same wholesaler in logic, but here we just take the first one found)
     const firstProductId = items[0].product_id;
     const firstProduct = await prisma.product.findUnique({ where: { id: firstProductId } });
-    
+
     if (!firstProduct || !firstProduct.wholesalerId) {
-       return res.status(400).json({ error: 'Product does not belong to a wholesaler' });
+      return res.status(400).json({ error: 'Product does not belong to a wholesaler' });
     }
     const wholesalerId = firstProduct.wholesalerId;
 
@@ -889,7 +952,7 @@ export const getWalletTransactions = async (req: AuthRequest, res: Response) => 
       type: 'debit',
       amount: o.totalAmount,
       balance_after: 0, // Not tracked per row
-      description: `Order #${o.id.substring(0,8)}`,
+      description: `Order #${o.id.substring(0, 8)}`,
       reference: o.id,
       status: 'completed',
       created_at: o.createdAt
@@ -958,7 +1021,7 @@ export const getCreditOrders = async (req: AuthRequest, res: Response) => {
     }
 
     const { status, limit = '10', offset = '0' } = req.query;
-    
+
     // Define "Credit Orders". For now, we assume any order with status 'credit' or 'pending_payment'
     const where: any = {
       retailerId: retailerProfile.id,
@@ -1019,7 +1082,7 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
       display_id: order.id.substring(0, 8).toUpperCase(),
       wholesaler_name: order.wholesalerProfile?.companyName,
       total_amount: order.totalAmount,
-      amount_paid: 0, 
+      amount_paid: 0,
       amount_pending: order.totalAmount,
       status: order.status,
       due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
@@ -1095,8 +1158,8 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
     // 2. Validate Repayment (Mock check: if amount > pending)
     // In real app, check order balance. Here assuming totalAmount is pending.
     if (amount > order.totalAmount) {
-       // Allow overpayment? Probably not for MVP.
-       // return res.status(400).json({ error: 'Amount exceeds outstanding balance' });
+      // Allow overpayment? Probably not for MVP.
+      // return res.status(400).json({ error: 'Amount exceeds outstanding balance' });
     }
 
     // 3. Process Payment (Debit Wallet)
@@ -1132,7 +1195,7 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    
+
     res.json({ success: true, message: 'Repayment successful' });
   } catch (error: any) {
     console.error('Repayment error:', error);
@@ -1171,7 +1234,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       name: retailerProfile.user.name,
       email: retailerProfile.user.email,
       phone: retailerProfile.user.phone,
-      
+
       // Retailer specific info
       id: retailerProfile.id,
       shop_name: retailerProfile.shopName,
@@ -1179,7 +1242,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       tin_number: "TIN123456789", // Mock as schema doesn't have it
       contact_person: retailerProfile.user.name, // Use user name as contact person
       is_verified: true, // Mock
-      
+
       // Settings (Mock)
       notifications: {
         push: true,
@@ -1321,21 +1384,21 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     // 4. Daily Revenue (Last 7 Days) - specific for chart
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(now.getDate() - 7);
-    sevenDaysAgo.setHours(0,0,0,0);
-    
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
     // Group sales by date
     const dailyMap = new Map<string, number>();
     for (let d = new Date(sevenDaysAgo); d <= now; d.setDate(d.getDate() + 1)) {
       dailyMap.set(d.toISOString().split('T')[0], 0);
     }
-    
+
     salesInPeriod.forEach(sale => {
       const dateKey = sale.createdAt.toISOString().split('T')[0];
       if (dailyMap.has(dateKey)) {
         dailyMap.set(dateKey, (dailyMap.get(dateKey) || 0) + sale.totalAmount);
       }
     });
-    
+
     const dailyRevenue = Array.from(dailyMap.entries()).map(([date, amount]) => ({ date, amount }));
 
     // 5. Sales by Category
@@ -1350,7 +1413,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
         });
       });
     });
-    
+
     const salesByCategory = Array.from(categoryMap.entries()).map(([category, stats]) => ({
       category,
       count: stats.count,
@@ -1370,7 +1433,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
         });
       });
     });
-    
+
     const topSelling = Array.from(productStats.values())
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 5);
@@ -1388,7 +1451,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    
+
     const topBuyers = Array.from(customerStats.values())
       .sort((a, b) => b.spent - a.spent)
       .slice(0, 5);

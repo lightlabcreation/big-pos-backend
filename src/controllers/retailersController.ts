@@ -26,7 +26,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
                 retailerProfile: {
                     include: {
                         user: true,
-                        retailerCredit: true
+                        credit: true
                     }
                 }
             },
@@ -121,7 +121,7 @@ export const getRetailerById = async (req: AuthRequest, res: Response) => {
             where: { id },
             include: {
                 user: true,
-                retailerCredit: true,
+                credit: true,
                 _count: {
                     select: { orders: true }
                 }
@@ -311,7 +311,7 @@ export const getCreditRequestsWithStats = async (req: AuthRequest, res: Response
                 retailerProfile: {
                     include: {
                         user: true,
-                        retailerCredit: true
+                        credit: true
                     }
                 }
             },
@@ -319,20 +319,20 @@ export const getCreditRequestsWithStats = async (req: AuthRequest, res: Response
         });
 
         // Transform to match frontend expectations
-        const requests = creditRequests.map(req => ({
-            id: req.id,
-            retailerId: req.retailerId,
-            retailerName: req.retailerProfile.user.name || 'Unknown',
-            retailerShop: req.retailerProfile.shopName,
-            retailerPhone: req.retailerProfile.user.phone || '',
-            currentCredit: req.retailerProfile.retailerCredit?.usedCredit || 0,
-            creditLimit: req.retailerProfile.retailerCredit?.creditLimit || 0,
-            requestedAmount: req.amount,
-            reason: req.reason || '',
-            status: req.status as 'pending' | 'approved' | 'rejected',
-            createdAt: req.createdAt.toISOString(),
-            processedAt: req.reviewedAt?.toISOString(),
-            rejectionReason: req.reviewNotes
+        const requests = creditRequests.map(creditReq => ({
+            id: creditReq.id,
+            retailerId: creditReq.retailerId,
+            retailerName: creditReq.retailerProfile.user.name || 'Unknown',
+            retailerShop: creditReq.retailerProfile.shopName,
+            retailerPhone: creditReq.retailerProfile.user.phone || '',
+            currentCredit: creditReq.retailerProfile.credit?.usedCredit || 0,
+            creditLimit: creditReq.retailerProfile.credit?.creditLimit || 0,
+            requestedAmount: creditReq.amount,
+            reason: creditReq.reason || '',
+            status: creditReq.status as 'pending' | 'approved' | 'rejected',
+            createdAt: creditReq.createdAt.toISOString(),
+            processedAt: creditReq.reviewedAt?.toISOString(),
+            rejectionReason: creditReq.reviewNotes
         }));
 
         // Calculate credit stats
@@ -381,18 +381,18 @@ export const approveCreditRequest = async (req: AuthRequest, res: Response) => {
             },
             include: {
                 retailerProfile: {
-                    include: { retailerCredit: true }
+                    include: { credit: true }
                 }
             }
         });
 
         // Update retailer credit limit
-        if (creditRequest.retailerProfile.retailerCredit) {
+        if (creditRequest.retailerProfile.credit) {
             await prisma.retailerCredit.update({
-                where: { id: creditRequest.retailerProfile.retailerCredit.id },
+                where: { id: creditRequest.retailerProfile.credit.id },
                 data: {
-                    creditLimit: creditRequest.retailerProfile.retailerCredit.creditLimit + creditRequest.amount,
-                    availableCredit: creditRequest.retailerProfile.retailerCredit.availableCredit + creditRequest.amount
+                    creditLimit: creditRequest.retailerProfile.credit.creditLimit + creditRequest.amount,
+                    availableCredit: creditRequest.retailerProfile.credit.availableCredit + creditRequest.amount
                 }
             });
         }

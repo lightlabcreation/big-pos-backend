@@ -31,7 +31,7 @@ async function seedProjects() {
       endDate: new Date('2025-12-31'),
       dueDate: new Date('2025-12-31'),
       client: 'ABC Corporation',
-      managerId: employeeProfileId,
+      manager: { connect: { id: employeeProfileId } },
       memberRole: 'Frontend Developer'
     },
     {
@@ -44,7 +44,7 @@ async function seedProjects() {
       endDate: new Date('2026-02-28'),
       dueDate: new Date('2026-02-28'),
       client: 'XYZ Ltd',
-      managerId: employeeProfileId,
+      manager: { connect: { id: employeeProfileId } },
       memberRole: 'QA Tester'
     },
     {
@@ -57,7 +57,7 @@ async function seedProjects() {
       endDate: new Date('2025-11-30'),
       dueDate: new Date('2025-11-30'),
       client: null,
-      managerId: employeeProfileId,
+      manager: { connect: { id: employeeProfileId } },
       memberRole: 'Backend Developer'
     },
     {
@@ -70,7 +70,7 @@ async function seedProjects() {
       endDate: new Date('2026-03-31'),
       dueDate: new Date('2026-03-31'),
       client: 'DEF Industries',
-      managerId: employeeProfileId,
+      manager: { connect: { id: employeeProfileId } },
       memberRole: 'Content Writer'
     }
   ];
@@ -101,7 +101,7 @@ async function seedProjects() {
     };
 
     const taskCount = taskCounts[project.name] || { total: 10, completed: 0 };
-    
+
     for (let i = 1; i <= taskCount.total; i++) {
       const isCompleted = i <= taskCount.completed;
       const estimatedHours = Math.floor(Math.random() * 8) + 4; // 4-12 hours
