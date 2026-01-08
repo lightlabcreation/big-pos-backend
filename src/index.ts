@@ -6,8 +6,8 @@ import storeRoutes from './routes/storeRoutes';
 import retailerRoutes from './routes/retailerRoutes';
 import wholesalerRoutes from './routes/wholesalerRoutes';
 import employeeRoutes from './routes/employeeRoutes';
-// import adminRoutes from './routes/adminRoutes';
-// import nfcRoutes from './routes/nfcRoutes';
+import adminRoutes from './routes/adminRoutes';
+import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
 import projectRoutes from './routes/projectRoutes';
 import trainingRoutes from './routes/trainingRoutes';
@@ -61,7 +61,7 @@ app.use('/employee', trainingRoutes);
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
 app.use('/wholesaler', wholesalerRoutes);
-// app.use('/admin', adminRoutes);
+app.use('/admin', adminRoutes);
 import debugRoutes from './routes/debugRoutes';
 
 // ... imports
