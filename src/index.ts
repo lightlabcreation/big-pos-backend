@@ -1,5 +1,4 @@
 import express from 'express';
-// Restart trigger 3
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes';
@@ -10,21 +9,25 @@ import employeeRoutes from './routes/employeeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
-import vendorRoutes from './routes/vendorRoutes';
+import debugRoutes from './routes/debugRoutes';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 9000;
 
+// CORS Configuration
 app.use(cors({
-  origin: true, // Allow ALL origins (reflection)
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "https://big-pos.netlify.app", "http://localhost:5173", "http://localhost:3062", "http://localhost:9000"],
+  credentials: true
 }));
-// Handle preflight requests explicitly
-app.options(/.*$/, cors());
+
+// Request Logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(express.json());
 
 // Routes
@@ -34,19 +37,13 @@ app.use('/wholesaler/auth', authRoutes);
 app.use('/admin/auth', authRoutes);
 app.use('/employee/auth', authRoutes);
 
+app.use('/employee', employeeRoutes);
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
 app.use('/wholesaler', wholesalerRoutes);
 app.use('/admin', adminRoutes);
-app.use('/admin/vendors', vendorRoutes);
-app.use('/employee', employeeRoutes);
-import debugRoutes from './routes/debugRoutes';
-
-// ... imports
-
 app.use('/wallet', walletRoutes);
 app.use('/debug', debugRoutes); // Public debug endpoint
-
 
 app.get('/', (req, res) => {
   res.send('Big Company API is running');
@@ -62,7 +59,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     const path = require('path');
     const logPath = path.join(__dirname, '../error.log');
     const timestamp = new Date().toISOString();
-    fs.appendFileSync(logPath, `[${timestamp}] ${err.stack || err}\n`);
+    fs.appendFileSync(logPath, `[${timestamp}] ${err.stack || err}\\n`);
   } catch (fsError) {
     console.error('Failed to write to error log:', fsError);
   }

@@ -16,7 +16,7 @@ export const getJobs = async (req: AuthRequest, res: Response) => {
             orderBy: { postedDate: 'desc' },
             include: {
                 _count: {
-                    select: { applications: true }
+                    select: { jobApplications: true }
                 }
             }
         });
@@ -102,7 +102,7 @@ export const getApplications = async (req: AuthRequest, res: Response) => {
             where,
             orderBy: { appliedDate: 'desc' },
             include: {
-                job: {
+                jobPosting: {
                     select: { title: true }
                 }
             }

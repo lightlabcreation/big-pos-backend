@@ -23,7 +23,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
         const orders = await prisma.order.findMany({
             where: { wholesalerId: wholesalerProfile.id },
             include: {
-                retailer: {
+                retailerProfile: {
                     include: {
                         user: true,
                         credit: true
@@ -37,7 +37,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
         const retailersMap = new Map();
         for (const order of orders) {
             if (!retailersMap.has(order.retailerId)) {
-                retailersMap.set(order.retailerId, order.retailer);
+                retailersMap.set(order.retailerId, order.retailerProfile);
             }
         }
 
@@ -65,7 +65,7 @@ export const getRetailerStats = async (req: AuthRequest, res: Response) => {
         // Get all orders to find unique retailers
         const orders = await prisma.order.findMany({
             where: { wholesalerId: wholesalerProfile.id },
-            include: { retailer: true }
+            include: { retailerProfile: true }
         });
 
         const uniqueRetailers = new Set(orders.map(o => o.retailerId));
@@ -74,7 +74,7 @@ export const getRetailerStats = async (req: AuthRequest, res: Response) => {
         // Get credit data
         const creditData = await prisma.retailerCredit.findMany({
             where: {
-                retailer: {
+                retailerProfile: {
                     orders: {
                         some: {
                             wholesalerId: wholesalerProfile.id
@@ -175,7 +175,7 @@ export const getRetailerOrdersById = async (req: AuthRequest, res: Response) => 
             },
             include: {
                 _count: {
-                    select: { items: true }
+                    select: { orderItems: true }
                 }
             },
             orderBy: { createdAt: 'desc' },
@@ -192,7 +192,7 @@ export const getRetailerOrdersById = async (req: AuthRequest, res: Response) => 
             paymentStatus: order.status === 'delivered' ? 'paid' : 'pending',
             createdAt: order.createdAt.toISOString(),
             _count: {
-                items: order._count.items
+                items: order._count.orderItems
             }
         }));
 
@@ -266,7 +266,7 @@ export const getSuppliers = async (req: AuthRequest, res: Response) => {
         const suppliers = await prisma.supplier.findMany({
             include: {
                 products: true,
-                payments: true
+                supplierPayments: true
             },
             orderBy: { name: 'asc' }
         });
@@ -299,7 +299,7 @@ export const getCreditRequestsWithStats = async (req: AuthRequest, res: Response
         // Get credit requests from retailers who have ordered from this wholesaler
         const creditRequests = await prisma.creditRequest.findMany({
             where: {
-                retailer: {
+                retailerProfile: {
                     orders: {
                         some: {
                             wholesalerId: wholesalerProfile.id
@@ -308,7 +308,7 @@ export const getCreditRequestsWithStats = async (req: AuthRequest, res: Response
                 }
             },
             include: {
-                retailer: {
+                retailerProfile: {
                     include: {
                         user: true,
                         credit: true
@@ -319,26 +319,26 @@ export const getCreditRequestsWithStats = async (req: AuthRequest, res: Response
         });
 
         // Transform to match frontend expectations
-        const requests = creditRequests.map(req => ({
-            id: req.id,
-            retailerId: req.retailerId,
-            retailerName: req.retailer.user.name || 'Unknown',
-            retailerShop: req.retailer.shopName,
-            retailerPhone: req.retailer.user.phone || '',
-            currentCredit: req.retailer.credit?.usedCredit || 0,
-            creditLimit: req.retailer.credit?.creditLimit || 0,
-            requestedAmount: req.amount,
-            reason: req.reason || '',
-            status: req.status as 'pending' | 'approved' | 'rejected',
-            createdAt: req.createdAt.toISOString(),
-            processedAt: req.reviewedAt?.toISOString(),
-            rejectionReason: req.reviewNotes
+        const requests = creditRequests.map(creditReq => ({
+            id: creditReq.id,
+            retailerId: creditReq.retailerId,
+            retailerName: creditReq.retailerProfile.user.name || 'Unknown',
+            retailerShop: creditReq.retailerProfile.shopName,
+            retailerPhone: creditReq.retailerProfile.user.phone || '',
+            currentCredit: creditReq.retailerProfile.credit?.usedCredit || 0,
+            creditLimit: creditReq.retailerProfile.credit?.creditLimit || 0,
+            requestedAmount: creditReq.amount,
+            reason: creditReq.reason || '',
+            status: creditReq.status as 'pending' | 'approved' | 'rejected',
+            createdAt: creditReq.createdAt.toISOString(),
+            processedAt: creditReq.reviewedAt?.toISOString(),
+            rejectionReason: creditReq.reviewNotes
         }));
 
         // Calculate credit stats
         const allCreditData = await prisma.retailerCredit.findMany({
             where: {
-                retailer: {
+                retailerProfile: {
                     orders: {
                         some: {
                             wholesalerId: wholesalerProfile.id
@@ -380,19 +380,19 @@ export const approveCreditRequest = async (req: AuthRequest, res: Response) => {
                 reviewedAt: new Date()
             },
             include: {
-                retailer: {
+                retailerProfile: {
                     include: { credit: true }
                 }
             }
         });
 
         // Update retailer credit limit
-        if (creditRequest.retailer.credit) {
+        if (creditRequest.retailerProfile.credit) {
             await prisma.retailerCredit.update({
-                where: { id: creditRequest.retailer.credit.id },
+                where: { id: creditRequest.retailerProfile.credit.id },
                 data: {
-                    creditLimit: creditRequest.retailer.credit.creditLimit + creditRequest.amount,
-                    availableCredit: creditRequest.retailer.credit.availableCredit + creditRequest.amount
+                    creditLimit: creditRequest.retailerProfile.credit.creditLimit + creditRequest.amount,
+                    availableCredit: creditRequest.retailerProfile.credit.availableCredit + creditRequest.amount
                 }
             });
         }
@@ -494,5 +494,3 @@ export const updateRetailerCreditLimit = async (req: AuthRequest, res: Response)
 export const blockRetailer = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, message: 'Status updated successfully' });
 };
-
-

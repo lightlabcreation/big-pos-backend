@@ -235,6 +235,13 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
             }
         });
 
+        // Generate gas meter token (16 digits formatted as XXXX-XXXX-XXXX-XXXX)
+        const generateToken = () => {
+            const digits = Math.random().toString().slice(2, 18).padEnd(16, '0');
+            return digits.match(/.{1,4}/g)?.join('-') || '0000-0000-0000-0000';
+        };
+        const token = generateToken();
+
         res.json({
             success: true,
             data: {
@@ -243,6 +250,7 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 meter_number,
                 amount,
                 units,
+                token,
                 reward_units: rewardUnits,
                 new_wallet_balance: wallet.balance - amount
             },
@@ -277,7 +285,7 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
             where,
             orderBy: { createdAt: 'desc' },
             include: {
-                meter: {
+                gasMeter: {
                     select: {
                         meterNumber: true,
                         aliasName: true
@@ -290,8 +298,8 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
             success: true,
             data: topups.map(t => ({
                 id: t.id,
-                meter_number: t.meter.meterNumber,
-                meter_alias: t.meter.aliasName,
+                meter_number: t.gasMeter.meterNumber,
+                meter_alias: t.gasMeter.aliasName,
                 amount: t.amount,
                 units: t.units,
                 currency: t.currency,
@@ -393,7 +401,7 @@ export const getGasRewardsLeaderboard = async (req: AuthRequest, res: Response) 
         const rewards = await prisma.gasReward.findMany({
             where: dateFilter ? { createdAt: { gte: dateFilter } } : {},
             include: {
-                consumer: {
+                consumerProfile: {
                     include: {
                         user: {
                             select: {
@@ -414,7 +422,7 @@ export const getGasRewardsLeaderboard = async (req: AuthRequest, res: Response) 
             } else {
                 acc.push({
                     consumerId: reward.consumerId,
-                    customer_name: reward.consumer.user.name || 'Anonymous',
+                    customer_name: reward.consumerProfile.user.name || 'Anonymous',
                     total_units: reward.units
                 });
             }

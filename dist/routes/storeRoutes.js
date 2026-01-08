@@ -1,58 +1,43 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const storeController_1 = require("../controllers/storeController");
+const customerController_1 = require("../controllers/customerController");
+const gasController_1 = require("../controllers/gasController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const storeController = __importStar(require("../controllers/storeController"));
 const router = (0, express_1.Router)();
-// All store routes require consumer authentication
-router.use(authMiddleware_1.authenticate);
-router.use((0, authMiddleware_1.authorize)('consumer'));
-// Retailers
-router.get('/retailers', storeController.getRetailers);
-// Categories & Products
-router.get('/categories', storeController.getCategories);
-router.get('/products', storeController.getProducts);
-// Customer Orders
-router.get('/customers/me/orders', storeController.getMyOrders);
-// Wallet
-router.get('/wallet/balance', storeController.getWalletBalance);
-// Rewards
-router.get('/rewards/balance', storeController.getRewardsBalance);
-// Loans
-router.get('/loans', storeController.getLoans);
-router.get('/loans/products', storeController.getLoanProducts);
-router.get('/loans/eligibility', storeController.checkLoanEligibility);
+// Public routes
+router.get('/retailers', storeController_1.getRetailers);
+router.get('/categories', storeController_1.getCategories);
+router.get('/products', storeController_1.getProducts);
+// Protected routes - Auth
+router.post('/auth/logout', authMiddleware_1.authenticate, customerController_1.logout);
+// Protected routes - Customer Profile
+router.get('/customers/me', authMiddleware_1.authenticate, customerController_1.getCustomerProfile);
+router.put('/customers/me', authMiddleware_1.authenticate, customerController_1.updateCustomerProfile);
+// Protected routes - Wallets
+router.get('/wallets', authMiddleware_1.authenticate, customerController_1.getWallets);
+router.post('/wallets/topup', authMiddleware_1.authenticate, customerController_1.topupWallet);
+router.post('/wallets/refund-request', authMiddleware_1.authenticate, customerController_1.requestRefund);
+router.get('/wallets/transactions', authMiddleware_1.authenticate, customerController_1.getWalletTransactions);
+// Protected routes - Gas Service
+router.get('/gas/meters', authMiddleware_1.authenticate, gasController_1.getGasMeters);
+router.post('/gas/meters', authMiddleware_1.authenticate, gasController_1.addGasMeter);
+router.delete('/gas/meters/:id', authMiddleware_1.authenticate, gasController_1.removeGasMeter);
+router.post('/gas/topup', authMiddleware_1.authenticate, gasController_1.topupGas);
+router.get('/gas/usage', authMiddleware_1.authenticate, gasController_1.getGasUsage);
+// Protected routes - Gas Rewards
+router.get('/gas/rewards/balance', authMiddleware_1.authenticate, gasController_1.getGasRewardsBalance);
+router.get('/gas/rewards/history', authMiddleware_1.authenticate, gasController_1.getGasRewardsHistory);
+router.get('/gas/rewards/leaderboard', authMiddleware_1.authenticate, gasController_1.getGasRewardsLeaderboard);
+// Protected routes - Orders
+router.get('/customers/me/orders', authMiddleware_1.authenticate, gasController_1.getCustomerOrders);
+router.get('/orders/:id', authMiddleware_1.authenticate, gasController_1.getOrderDetails);
+// Legacy routes (keep for backward compatibility)
+router.get('/orders', authMiddleware_1.authenticate, storeController_1.getMyOrders);
+router.get('/wallet/balance', authMiddleware_1.authenticate, storeController_1.getWalletBalance);
+router.get('/rewards/balance', authMiddleware_1.authenticate, storeController_1.getRewardsBalance);
+router.get('/loans', authMiddleware_1.authenticate, storeController_1.getLoans);
+router.get('/loans/products', authMiddleware_1.authenticate, storeController_1.getLoanProducts);
+router.get('/loans/check-eligibility', authMiddleware_1.authenticate, storeController_1.checkLoanEligibility);
 exports.default = router;

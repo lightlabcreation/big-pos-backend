@@ -147,7 +147,7 @@ export const createWholesaler = async (req: AuthRequest, res: Response) => {
 export const getLoans = async (req: AuthRequest, res: Response) => {
   try {
     const loans = await prisma.loan.findMany({
-      include: { consumer: { include: { user: true } } }
+      include: { consumerProfile: { include: { user: true } } }
     });
     res.json({ loans });
   } catch (error: any) {
@@ -159,7 +159,7 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
 export const getNFCCards = async (req: AuthRequest, res: Response) => {
   try {
     const cards = await prisma.nfcCard.findMany({
-      include: { consumer: { include: { user: true } } }
+      include: { consumerProfile: { include: { user: true } } }
     });
     res.json({ cards });
   } catch (error: any) {
@@ -315,12 +315,12 @@ export const verifyRetailer = async (req: AuthRequest, res: Response) => {
     if (!retailer) return res.status(404).json({ error: 'Retailer not found' });
 
     // Update isVerified status
-    const updatedRetailer = await prisma.retailerProfile.update({
+    await prisma.retailerProfile.update({
       where: { id },
       data: { isVerified: true }
     });
 
-    res.json({ success: true, message: 'Retailer verified successfully', retailer: updatedRetailer });
+    res.json({ success: true, message: 'Retailer verified successfully' });
   } catch (error: any) {
     console.error('Verify Retailer Error:', error);
     res.status(500).json({ error: error.message });
@@ -566,10 +566,10 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
     const products = await prisma.product.findMany({
       include: {
-        retailer: {
+        retailerProfile: {
           select: { shopName: true }
         },
-        wholesaler: {
+        wholesalerProfile: {
           select: { companyName: true }
         }
       },

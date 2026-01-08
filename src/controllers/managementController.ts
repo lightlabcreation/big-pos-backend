@@ -110,7 +110,7 @@ export const getManagementSuppliers = async (req: AuthRequest, res: Response) =>
             } as any,
             include: {
                 products: true,
-                payments: {
+                supplierPayments: {
                     where: { wholesalerId: (wholesalerProfile as any).id }
                 }
             } as any,
@@ -119,7 +119,7 @@ export const getManagementSuppliers = async (req: AuthRequest, res: Response) =>
 
         // Transform suppliers to match frontend expectations
         const transformedSuppliers = suppliers.map((supplier: any) => {
-            const totalPaid = ((supplier as any).payments || [])
+            const totalPaid = ((supplier as any).supplierPayments || [])
                 .filter((p: any) => p.status === 'completed')
                 .reduce((sum: number, p: any) => sum + p.amount, 0);
 
@@ -139,7 +139,7 @@ export const getManagementSuppliers = async (req: AuthRequest, res: Response) =>
                 address: supplier.address || '',
                 status: supplier.status as 'active' | 'inactive',
                 payment_terms: 'Net 30', // Default, can be added to schema later
-                total_orders: ((supplier as any).payments || []).length,
+                total_orders: ((supplier as any).supplierPayments || []).length,
                 total_paid: totalPaid,
                 outstanding_balance: outstandingBalance,
                 products_supplied: ((supplier as any).products || []).length,
@@ -178,7 +178,7 @@ export const getSupplierDetails = async (req: AuthRequest, res: Response) => {
             } as any,
             include: {
                 products: true,
-                payments: {
+                supplierPayments: {
                     where: { wholesalerId: (wholesalerProfile as any).id },
                     orderBy: { paymentDate: 'desc' }
                 }
@@ -189,7 +189,7 @@ export const getSupplierDetails = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Supplier not found' });
         }
 
-        const totalPaid = ((supplier as any).payments || [])
+        const totalPaid = ((supplier as any).supplierPayments || [])
             .filter((p: any) => p.status === 'completed')
             .reduce((sum: number, p: any) => sum + p.amount, 0);
 
@@ -209,12 +209,12 @@ export const getSupplierDetails = async (req: AuthRequest, res: Response) => {
             address: supplier.address || '',
             status: supplier.status as 'active' | 'inactive',
             payment_terms: 'Net 30',
-            total_orders: ((supplier as any).payments || []).length,
+            total_orders: ((supplier as any).supplierPayments || []).length,
             total_paid: totalPaid,
             outstanding_balance: outstandingBalance,
             products_supplied: ((supplier as any).products || []).length,
             created_at: supplier.createdAt.toISOString(),
-            payments: ((supplier as any).payments || []).map((p: any) => ({
+            payments: ((supplier as any).supplierPayments || []).map((p: any) => ({
                 id: p.id,
                 amount: p.amount,
                 paymentDate: p.paymentDate.toISOString(),
@@ -318,13 +318,13 @@ export const updateSupplier = async (req: AuthRequest, res: Response) => {
             },
             include: {
                 products: true,
-                payments: {
+                supplierPayments: {
                     where: { wholesalerId: (wholesalerProfile as any).id }
                 }
             } as any
         });
 
-        const totalPaid = ((supplier as any).payments || [])
+        const totalPaid = ((supplier as any).supplierPayments || [])
             .filter((p: any) => p.status === 'completed')
             .reduce((sum: number, p: any) => sum + p.amount, 0);
 
@@ -347,7 +347,7 @@ export const updateSupplier = async (req: AuthRequest, res: Response) => {
                 address: supplier.address || '',
                 status: supplier.status as 'active' | 'inactive',
                 payment_terms: 'Net 30',
-                total_orders: ((supplier as any).payments || []).length,
+                total_orders: ((supplier as any).supplierPayments || []).length,
                 total_paid: totalPaid,
                 outstanding_balance: outstandingBalance,
                 products_supplied: ((supplier as any).products || []).length,
@@ -455,12 +455,12 @@ export const getProfitInvoiceDetails = async (req: AuthRequest, res: Response) =
             include: {
                 order: {
                     include: {
-                        items: {
+                        orderItems: {
                             include: {
                                 product: true
                             }
                         },
-                        retailer: {
+                        retailerProfile: {
                             include: {
                                 user: true
                             }
@@ -490,9 +490,9 @@ export const getProfitInvoiceDetails = async (req: AuthRequest, res: Response) =
             paid_at: invoice.generatedAt.toISOString(),
             order_details: {
                 id: invoice.order.id,
-                retailer_name: invoice.order.retailer.user.name,
+                retailer_name: invoice.order.retailerProfile.user.name,
                 total_amount: invoice.order.totalAmount,
-                items: invoice.order.items.map(item => ({
+                items: (invoice.order as any).orderItems.map((item: any) => ({
                     product_name: item.product.name,
                     quantity: item.quantity,
                     price: item.price

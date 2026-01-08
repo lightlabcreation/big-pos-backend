@@ -1,59 +1,59 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const adminController_1 = require("../controllers/adminController");
+const supplierController_1 = require("../controllers/supplierController");
+const recruitmentController_1 = require("../controllers/recruitmentController");
+const dealsController_1 = require("../controllers/dealsController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const adminController = __importStar(require("../controllers/adminController"));
 const router = (0, express_1.Router)();
-// All admin routes require admin authentication
 router.use(authMiddleware_1.authenticate);
-router.use((0, authMiddleware_1.authorize)('admin'));
-// Dashboard
-router.get('/dashboard', adminController.getDashboard);
-// Customers
-router.get('/customers', adminController.getCustomers);
-// Retailers
-router.get('/retailers', adminController.getRetailers);
-router.post('/accounts/create-retailer', adminController.createRetailer);
-// Wholesalers
-router.get('/wholesalers', adminController.getWholesalers);
-router.post('/accounts/create-wholesaler', adminController.createWholesaler);
-// Loans
-router.get('/loans', adminController.getLoans);
-// NFC Cards
-router.get('/nfc-cards', adminController.getNFCCards);
-// Categories
-router.get('/categories', adminController.getCategories);
+router.get('/dashboard', adminController_1.getDashboard);
+// Customer Routes
+router.get('/customers', adminController_1.getCustomers);
+router.post('/customers', adminController_1.createCustomer);
+router.put('/customers/:id', adminController_1.updateCustomer);
+router.delete('/customers/:id', adminController_1.deleteCustomer);
+// Retailer Routes
+router.get('/retailers', adminController_1.getRetailers);
+router.post('/retailers', adminController_1.createRetailer);
+router.put('/retailers/:id', adminController_1.updateRetailer);
+router.delete('/retailers/:id', adminController_1.deleteRetailer);
+// Wholesaler Routes
+router.get('/wholesalers', adminController_1.getWholesalers);
+router.post('/wholesalers', adminController_1.createWholesaler);
+router.put('/wholesalers/:id', adminController_1.updateWholesaler);
+router.delete('/wholesalers/:id', adminController_1.deleteWholesaler);
+router.get('/loans', adminController_1.getLoans);
+router.get('/nfc-cards', adminController_1.getNFCCards);
+// Product Routes
+router.get('/products', adminController_1.getProducts);
+// Category Routes
+router.get('/categories', adminController_1.getCategories);
+router.post('/categories', adminController_1.createCategory);
+router.put('/categories/:id', adminController_1.updateCategory);
+router.delete('/categories/:id', adminController_1.deleteCategory);
+// Supplier Routes
+router.get('/suppliers', supplierController_1.getSuppliers);
+router.post('/suppliers', supplierController_1.createSupplier);
+router.put('/suppliers/:id', supplierController_1.updateSupplier);
+router.delete('/suppliers/:id', supplierController_1.deleteSupplier);
+// Recruitment Routes
+router.get('/jobs', recruitmentController_1.getJobs);
+router.post('/jobs', recruitmentController_1.createJob);
+router.put('/jobs/:id', recruitmentController_1.updateJob);
+router.delete('/jobs/:id', recruitmentController_1.deleteJob);
+router.get('/applications', recruitmentController_1.getApplications);
+router.post('/applications', recruitmentController_1.createApplication);
+router.put('/applications/:id/status', recruitmentController_1.updateApplicationStatus);
+// Deals Routes
+router.get('/deals', dealsController_1.getDeals);
+router.post('/deals', dealsController_1.createDeal);
+router.put('/deals/:id', dealsController_1.updateDeal);
+router.delete('/deals/:id', dealsController_1.deleteDeal);
+// Employee Routes
+router.get('/employees', adminController_1.getEmployees);
+router.post('/employees', adminController_1.createEmployee);
+router.put('/employees/:id', adminController_1.updateEmployee);
+router.delete('/employees/:id', adminController_1.deleteEmployee);
 exports.default = router;

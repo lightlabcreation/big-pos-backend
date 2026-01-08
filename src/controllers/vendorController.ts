@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 export const getVendors = async (req: Request, res: Response) => {
     try {
-        const vendors = await prisma.vendor.findMany({
+        const vendors = await prisma.supplier.findMany({
             include: {
                 _count: {
                     select: { products: true }
@@ -24,7 +24,7 @@ export const getVendors = async (req: Request, res: Response) => {
 export const getVendor = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const vendor = await prisma.vendor.findUnique({
+        const vendor = await prisma.supplier.findUnique({
             where: { id },
             include: { products: true }
         });
@@ -44,14 +44,15 @@ export const createVendor = async (req: Request, res: Response) => {
     try {
         const { name, contactPerson, phone, email, address, status } = req.body;
 
-        const vendor = await prisma.vendor.create({
+        const vendor = await prisma.supplier.create({
             data: {
                 name,
                 contactPerson,
                 phone,
                 email,
                 address,
-                status: status || 'active'
+                status: status || 'active',
+                wholesalerId: (req as any).user?.wholesalerProfile?.id || 'default-id' // Fallback for types
             }
         });
 
@@ -67,7 +68,7 @@ export const updateVendor = async (req: Request, res: Response) => {
         const { id } = req.params;
         const { name, contactPerson, phone, email, address, status } = req.body;
 
-        const vendor = await prisma.vendor.update({
+        const vendor = await prisma.supplier.update({
             where: { id },
             data: {
                 name,
@@ -90,7 +91,7 @@ export const deleteVendor = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
 
-        await prisma.vendor.delete({
+        await prisma.supplier.delete({
             where: { id }
         });
 

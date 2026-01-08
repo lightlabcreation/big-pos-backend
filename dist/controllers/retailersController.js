@@ -1,0 +1,465 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.blockRetailer = exports.updateRetailerCreditLimit = exports.rejectCreditRequest = exports.approveCreditRequest = exports.getCreditRequestsWithStats = exports.getSuppliers = exports.getSupplierOrders = exports.getRetailerOrdersById = exports.getRetailerById = exports.getRetailerStats = exports.getRetailers = void 0;
+const prisma_1 = __importDefault(require("../utils/prisma"));
+// ============================================
+// RETAILERS MANAGEMENT
+// ============================================
+// Get all retailers
+const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        console.log('🏪 Fetching retailers for user:', (_a = req.user) === null || _a === void 0 ? void 0 : _a.id);
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Get all retailers who have placed orders with this wholesaler
+        const orders = yield prisma_1.default.order.findMany({
+            where: { wholesalerId: wholesalerProfile.id },
+            include: {
+                retailer: {
+                    include: {
+                        user: true,
+                        credit: true
+                    }
+                }
+            },
+            distinct: ['retailerId']
+        });
+        // Extract unique retailers
+        const retailersMap = new Map();
+        for (const order of orders) {
+            if (!retailersMap.has(order.retailerId)) {
+                retailersMap.set(order.retailerId, order.retailer);
+            }
+        }
+        const retailers = Array.from(retailersMap.values());
+        console.log(`✅ Found ${retailers.length} retailers`);
+        res.json({ retailers, count: retailers.length });
+    }
+    catch (error) {
+        console.error('❌ Error fetching retailers:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getRetailers = getRetailers;
+// Get retailer stats
+const getRetailerStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Get all orders to find unique retailers
+        const orders = yield prisma_1.default.order.findMany({
+            where: { wholesalerId: wholesalerProfile.id },
+            include: { retailer: true }
+        });
+        const uniqueRetailers = new Set(orders.map(o => o.retailerId));
+        const totalRetailers = uniqueRetailers.size;
+        // Get credit data
+        const creditData = yield prisma_1.default.retailerCredit.findMany({
+            where: {
+                retailer: {
+                    orders: {
+                        some: {
+                            wholesalerId: wholesalerProfile.id
+                        }
+                    }
+                }
+            }
+        });
+        const totalCreditExtended = creditData.reduce((sum, c) => sum + c.creditLimit, 0);
+        const totalCreditUsed = creditData.reduce((sum, c) => sum + c.usedCredit, 0);
+        const creditUtilization = totalCreditExtended > 0
+            ? Math.round((totalCreditUsed / totalCreditExtended) * 100)
+            : 0;
+        res.json({
+            total_retailers: totalRetailers,
+            active_retailers: totalRetailers, // All are active if they have orders
+            credit_extended: totalCreditExtended,
+            credit_utilization_percentage: creditUtilization
+        });
+    }
+    catch (error) {
+        console.error('❌ Error fetching retailer stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getRetailerStats = getRetailerStats;
+// Get single retailer details
+const getRetailerById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        console.log('🏪 Fetching retailer details for:', id);
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Get retailer with all details
+        const retailer = yield prisma_1.default.retailerProfile.findUnique({
+            where: { id },
+            include: {
+                user: true,
+                credit: true,
+                _count: {
+                    select: { orders: true }
+                }
+            }
+        });
+        if (!retailer) {
+            return res.status(404).json({ error: 'Retailer not found' });
+        }
+        // Calculate total revenue from orders with this wholesaler
+        const orders = yield prisma_1.default.order.findMany({
+            where: {
+                retailerId: id,
+                wholesalerId: wholesalerProfile.id
+            }
+        });
+        const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+        console.log(`✅ Found retailer: ${retailer.shopName}`);
+        res.json(Object.assign(Object.assign({}, retailer), { totalRevenue }));
+    }
+    catch (error) {
+        console.error('❌ Error fetching retailer details:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getRetailerById = getRetailerById;
+// Get retailer orders by retailer ID
+const getRetailerOrdersById = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const limit = parseInt(req.query.limit) || 10;
+        console.log(`📦 Fetching orders for retailer: ${id}`);
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        const orders = yield prisma_1.default.order.findMany({
+            where: {
+                retailerId: id,
+                wholesalerId: wholesalerProfile.id
+            },
+            include: {
+                _count: {
+                    select: { items: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: limit
+        });
+        // Transform to match frontend expectations
+        const transformedOrders = orders.map(order => ({
+            id: order.id,
+            orderNumber: `ORD-${order.id.substring(0, 8).toUpperCase()}`,
+            totalAmount: order.totalAmount,
+            status: order.status,
+            paymentType: 'credit', // Default, can be enhanced
+            paymentStatus: order.status === 'delivered' ? 'paid' : 'pending',
+            createdAt: order.createdAt.toISOString(),
+            _count: {
+                items: order._count.items
+            }
+        }));
+        console.log(`✅ Found ${transformedOrders.length} orders for retailer`);
+        res.json({ orders: transformedOrders, count: transformedOrders.length });
+    }
+    catch (error) {
+        console.error('❌ Error fetching retailer orders:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getRetailerOrdersById = getRetailerOrdersById;
+// ============================================
+// SUPPLIER MANAGEMENT
+// ============================================
+// Get supplier orders (payments made to suppliers)
+const getSupplierOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        console.log('🏭 Fetching supplier orders');
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Get all supplier payments
+        const payments = yield prisma_1.default.supplierPayment.findMany({
+            include: {
+                supplier: true
+            },
+            orderBy: { paymentDate: 'desc' }
+        });
+        // Transform to match frontend expectations
+        const orders = payments.map(payment => ({
+            id: payment.id,
+            supplierName: payment.supplier.name,
+            invoiceNumber: payment.reference || `PAY-${payment.id.substring(0, 8)}`,
+            totalAmount: payment.amount,
+            paymentStatus: payment.status,
+            itemsCount: 0, // Not tracked in current schema
+            createdAt: payment.paymentDate.toISOString(),
+            paidAt: payment.status === 'completed' ? payment.paymentDate.toISOString() : undefined
+        }));
+        const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+        const pendingAmount = payments
+            .filter(p => p.status === 'pending')
+            .reduce((sum, p) => sum + p.amount, 0);
+        console.log(`✅ Found ${orders.length} supplier orders`);
+        res.json({
+            orders,
+            count: orders.length,
+            totalAmount,
+            pendingAmount
+        });
+    }
+    catch (error) {
+        console.error('❌ Error fetching supplier orders:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getSupplierOrders = getSupplierOrders;
+// Get suppliers list
+const getSuppliers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const suppliers = yield prisma_1.default.supplier.findMany({
+            include: {
+                products: true,
+                payments: true
+            },
+            orderBy: { name: 'asc' }
+        });
+        res.json({ suppliers, count: suppliers.length });
+    }
+    catch (error) {
+        console.error('❌ Error fetching suppliers:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getSuppliers = getSuppliers;
+// ============================================
+// CREDIT MANAGEMENT
+// ============================================
+// Get credit requests - already implemented in wholesalerController
+// But let's make it return proper data
+const getCreditRequestsWithStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        console.log('💳 Fetching credit requests');
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Get credit requests from retailers who have ordered from this wholesaler
+        const creditRequests = yield prisma_1.default.creditRequest.findMany({
+            where: {
+                retailer: {
+                    orders: {
+                        some: {
+                            wholesalerId: wholesalerProfile.id
+                        }
+                    }
+                }
+            },
+            include: {
+                retailer: {
+                    include: {
+                        user: true,
+                        credit: true
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        // Transform to match frontend expectations
+        const requests = creditRequests.map(req => {
+            var _a, _b, _c;
+            return ({
+                id: req.id,
+                retailerId: req.retailerId,
+                retailerName: req.retailer.user.name || 'Unknown',
+                retailerShop: req.retailer.shopName,
+                retailerPhone: req.retailer.user.phone || '',
+                currentCredit: ((_a = req.retailer.credit) === null || _a === void 0 ? void 0 : _a.usedCredit) || 0,
+                creditLimit: ((_b = req.retailer.credit) === null || _b === void 0 ? void 0 : _b.creditLimit) || 0,
+                requestedAmount: req.amount,
+                reason: req.reason || '',
+                status: req.status,
+                createdAt: req.createdAt.toISOString(),
+                processedAt: (_c = req.reviewedAt) === null || _c === void 0 ? void 0 : _c.toISOString(),
+                rejectionReason: req.reviewNotes
+            });
+        });
+        // Calculate credit stats
+        const allCreditData = yield prisma_1.default.retailerCredit.findMany({
+            where: {
+                retailer: {
+                    orders: {
+                        some: {
+                            wholesalerId: wholesalerProfile.id
+                        }
+                    }
+                }
+            }
+        });
+        const totalCreditExtended = allCreditData.reduce((sum, c) => sum + c.creditLimit, 0);
+        const totalCreditUsed = allCreditData.reduce((sum, c) => sum + c.usedCredit, 0);
+        const creditAvailable = allCreditData.reduce((sum, c) => sum + c.availableCredit, 0);
+        console.log(`✅ Found ${requests.length} credit requests`);
+        res.json({
+            requests,
+            count: requests.length,
+            stats: {
+                totalCreditExtended,
+                totalCreditUsed,
+                creditAvailable
+            }
+        });
+    }
+    catch (error) {
+        console.error('❌ Error fetching credit requests:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getCreditRequestsWithStats = getCreditRequestsWithStats;
+// Approve credit request
+const approveCreditRequest = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const creditRequest = yield prisma_1.default.creditRequest.update({
+            where: { id },
+            data: {
+                status: 'approved',
+                reviewedAt: new Date()
+            },
+            include: {
+                retailer: {
+                    include: { credit: true }
+                }
+            }
+        });
+        // Update retailer credit limit
+        if (creditRequest.retailer.credit) {
+            yield prisma_1.default.retailerCredit.update({
+                where: { id: creditRequest.retailer.credit.id },
+                data: {
+                    creditLimit: creditRequest.retailer.credit.creditLimit + creditRequest.amount,
+                    availableCredit: creditRequest.retailer.credit.availableCredit + creditRequest.amount
+                }
+            });
+        }
+        res.json({ success: true, creditRequest });
+    }
+    catch (error) {
+        console.error('❌ Error approving credit request:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.approveCreditRequest = approveCreditRequest;
+// Reject credit request
+const rejectCreditRequest = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const creditRequest = yield prisma_1.default.creditRequest.update({
+            where: { id },
+            data: {
+                status: 'rejected',
+                reviewedAt: new Date(),
+                reviewNotes: reason
+            }
+        });
+        res.json({ success: true, creditRequest });
+    }
+    catch (error) {
+        console.error('❌ Error rejecting credit request:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.rejectCreditRequest = rejectCreditRequest;
+// Update retailer credit limit
+const updateRetailerCreditLimit = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params; // retailerId
+        let { creditLimit } = req.body;
+        // Handle numeric strings with commas (e.g., "350,000")
+        if (typeof creditLimit === 'string') {
+            creditLimit = creditLimit.replace(/,/g, '');
+        }
+        const newLimit = parseFloat(creditLimit);
+        if (isNaN(newLimit) || newLimit < 0) {
+            return res.status(400).json({ error: 'Invalid credit limit value' });
+        }
+        console.log(`💳 Updating credit limit for retailer ${id} to ${newLimit}`);
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Get existing credit record
+        const existingCredit = yield prisma_1.default.retailerCredit.findUnique({
+            where: { retailerId: id }
+        });
+        let credit;
+        if (existingCredit) {
+            // Calculate the difference and update available credit
+            const limitDifference = newLimit - existingCredit.creditLimit;
+            const newAvailableCredit = existingCredit.availableCredit + limitDifference;
+            credit = yield prisma_1.default.retailerCredit.update({
+                where: { retailerId: id },
+                data: {
+                    creditLimit: newLimit,
+                    availableCredit: newAvailableCredit
+                }
+            });
+        }
+        else {
+            // Create new credit record
+            credit = yield prisma_1.default.retailerCredit.create({
+                data: {
+                    retailerId: id,
+                    creditLimit: newLimit,
+                    availableCredit: newLimit,
+                    usedCredit: 0
+                }
+            });
+        }
+        console.log(`✅ Credit limit updated successfully for retailer ${id}`);
+        res.json({ success: true, credit });
+    }
+    catch (error) {
+        console.error('❌ Error updating credit limit:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.updateRetailerCreditLimit = updateRetailerCreditLimit;
+// Block/Unblock retailer
+const blockRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    res.json({ success: true, message: 'Status updated successfully' });
+});
+exports.blockRetailer = blockRetailer;

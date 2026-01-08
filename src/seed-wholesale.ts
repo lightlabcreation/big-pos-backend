@@ -614,7 +614,7 @@ async function seed() {
                         status,
                         totalAmount,
                         createdAt,
-                        items: {
+                        orderItems: {
                             create: orderProducts
                         }
                     }

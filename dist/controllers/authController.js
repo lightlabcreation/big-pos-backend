@@ -12,21 +12,21 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.login = exports.register = void 0;
+exports.updatePin = exports.updatePassword = exports.login = exports.register = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const auth_1 = require("../utils/auth");
 const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, password, phone, pin, role, first_name, last_name, business_name, shop_name, company_name } = req.body;
         // Determine role from URL if not provided
-        let targetRole = role;
-        if (!targetRole) {
+        let targetuser_role = role;
+        if (!targetuser_role) {
             if (req.baseUrl.includes('store'))
-                targetRole = 'consumer';
+                targetuser_role = 'consumer';
             else if (req.baseUrl.includes('retailer'))
-                targetRole = 'retailer';
+                targetuser_role = 'retailer';
             else if (req.baseUrl.includes('wholesaler'))
-                targetRole = 'wholesaler';
+                targetuser_role = 'wholesaler';
         }
         // Check existing user
         const existingUser = yield prisma_1.default.user.findFirst({
@@ -48,19 +48,19 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 phone,
                 password: hashedPassword,
                 pin: hashedPin, // Store pin (hashed)
-                role: targetRole,
+                role: targetuser_role,
                 name: first_name ? `${first_name} ${last_name || ''}`.trim() : (business_name || company_name || shop_name),
             }
         });
         // Create Profile
-        if (targetRole === 'consumer') {
+        if (targetuser_role === 'consumer') {
             yield prisma_1.default.consumerProfile.create({
                 data: {
                     userId: user.id
                 }
             });
         }
-        else if (targetRole === 'retailer') {
+        else if (targetuser_role === 'retailer') {
             yield prisma_1.default.retailerProfile.create({
                 data: {
                     userId: user.id,
@@ -69,7 +69,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 }
             });
         }
-        else if (targetRole === 'wholesaler') {
+        else if (targetuser_role === 'wholesaler') {
             yield prisma_1.default.wholesalerProfile.create({
                 data: {
                     userId: user.id,
@@ -96,18 +96,18 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
     try {
         const { email, password, phone, pin } = req.body;
-        let targetRole = req.body.role;
-        if (!targetRole) {
+        let targetuser_role = req.body.role;
+        if (!targetuser_role) {
             if (req.baseUrl.includes('store'))
-                targetRole = 'consumer';
+                targetuser_role = 'consumer';
             else if (req.baseUrl.includes('retailer'))
-                targetRole = 'retailer';
+                targetuser_role = 'retailer';
             else if (req.baseUrl.includes('wholesaler'))
-                targetRole = 'wholesaler';
+                targetuser_role = 'wholesaler';
             else if (req.baseUrl.includes('employee'))
-                targetRole = 'employee';
+                targetuser_role = 'employee';
             else if (req.baseUrl.includes('admin'))
-                targetRole = 'admin';
+                targetuser_role = 'admin';
         }
         // Find User
         const user = yield prisma_1.default.user.findFirst({
@@ -116,7 +116,7 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                     { email: email || undefined },
                     { phone: phone || undefined }
                 ],
-                role: targetRole // Ensure role matches
+                role: targetuser_role // Ensure role matches
             },
             include: {
                 consumerProfile: true,
@@ -130,11 +130,10 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         // Verify Password or PIN
         let valid = false;
-        if (targetRole === 'consumer') {
-            // Allow plain PIN compare for now if hashed fails, or just assuming hashed. 
-            // User might be sending plain PIN. I should hash it.
-            // Actually, for "A to Z" I should do it properly.
-            if (user.pin && (yield (0, auth_1.comparePassword)(pin, user.pin)))
+        if (targetuser_role === 'consumer') {
+            if (user.pin && pin && (yield (0, auth_1.comparePassword)(pin, user.pin)))
+                valid = true;
+            else if (user.password && password && (yield (0, auth_1.comparePassword)(password, user.password)))
                 valid = true;
         }
         else {
@@ -152,19 +151,19 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             success: true,
             access_token: token,
         };
-        if (targetRole === 'consumer') {
+        if (targetuser_role === 'consumer') {
             responseData.customer = Object.assign({ id: user.id, email: user.email, phone: user.phone, first_name: (_a = user.name) === null || _a === void 0 ? void 0 : _a.split(' ')[0], last_name: (_b = user.name) === null || _b === void 0 ? void 0 : _b.split(' ').slice(1).join(' ') }, user.consumerProfile);
         }
-        else if (targetRole === 'retailer') {
+        else if (targetuser_role === 'retailer') {
             responseData.retailer = Object.assign({ id: user.id, email: user.email, phone: user.phone, shop_name: (_c = user.retailerProfile) === null || _c === void 0 ? void 0 : _c.shopName, name: user.name }, user.retailerProfile);
         }
-        else if (targetRole === 'wholesaler') {
+        else if (targetuser_role === 'wholesaler') {
             responseData.wholesaler = Object.assign({ id: user.id, email: user.email, phone: user.phone, company_name: (_d = user.wholesalerProfile) === null || _d === void 0 ? void 0 : _d.companyName, name: user.name }, user.wholesalerProfile);
         }
-        else if (targetRole === 'employee') {
+        else if (targetuser_role === 'employee') {
             responseData.employee = Object.assign({ id: user.id, email: user.email, phone: user.phone, name: user.name }, user.employeeProfile);
         }
-        else if (targetRole === 'admin') {
+        else if (targetuser_role === 'admin') {
             responseData.admin = {
                 id: user.id,
                 email: user.email,
@@ -179,3 +178,51 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.login = login;
+const updatePassword = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { old_password, new_password } = req.body;
+        const userId = req.user.id;
+        const user = yield prisma_1.default.user.findUnique({ where: { id: userId } });
+        if (!user || !user.password) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        const isValid = yield (0, auth_1.comparePassword)(old_password, user.password);
+        if (!isValid) {
+            return res.status(400).json({ error: 'Incorrect current password' });
+        }
+        const hashedPassword = yield (0, auth_1.hashPassword)(new_password);
+        yield prisma_1.default.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword }
+        });
+        res.json({ success: true, message: 'Password updated successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.updatePassword = updatePassword;
+const updatePin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { old_pin, new_pin } = req.body;
+        const userId = req.user.id;
+        const user = yield prisma_1.default.user.findUnique({ where: { id: userId } });
+        if (!user || !user.pin) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        const isValid = yield (0, auth_1.comparePassword)(old_pin, user.pin);
+        if (!isValid) {
+            return res.status(400).json({ error: 'Incorrect current PIN' });
+        }
+        const hashedPin = yield (0, auth_1.hashPassword)(new_pin);
+        yield prisma_1.default.user.update({
+            where: { id: userId },
+            data: { pin: hashedPin }
+        });
+        res.json({ success: true, message: 'PIN updated successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.updatePin = updatePin;

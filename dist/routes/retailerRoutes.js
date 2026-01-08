@@ -1,56 +1,37 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const retailerController_1 = require("../controllers/retailerController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const retailerController = __importStar(require("../controllers/retailerController"));
 const router = (0, express_1.Router)();
-// All retailer routes require retailer authentication
 router.use(authMiddleware_1.authenticate);
-router.use((0, authMiddleware_1.authorize)('retailer'));
-// Dashboard
-router.get('/dashboard/stats', retailerController.getDashboardStats);
-// Inventory
-router.get('/inventory', retailerController.getInventory);
-router.post('/inventory', retailerController.createProduct);
-router.put('/inventory/:id', retailerController.updateProduct);
-// Orders
-router.get('/orders', retailerController.getOrders);
-// Branches
-router.get('/branches', retailerController.getBranches);
-router.post('/branches', retailerController.createBranch);
-// Wallet
-router.get('/wallet', retailerController.getWallet);
+router.get('/dashboard', retailerController_1.getDashboardStats);
+router.get('/inventory', retailerController_1.getInventory);
+router.post('/inventory', retailerController_1.createProduct);
+router.put('/inventory/:id', retailerController_1.updateProduct);
+router.get('/orders', retailerController_1.getOrders);
+router.post('/orders', retailerController_1.createOrder); // Add this line
+router.get('/branches', retailerController_1.getBranches);
+router.post('/branches', retailerController_1.createBranch);
+router.get('/wallet', retailerController_1.getWallet);
+router.get('/wallet/transactions', retailerController_1.getWalletTransactions);
+router.post('/wallet/topup', retailerController_1.topUpWallet);
+// Analytics Routes
+router.get('/analytics', retailerController_1.getAnalytics);
+// Credit Routes
+router.get('/credit', retailerController_1.getCreditInfo);
+router.get('/credit/orders', retailerController_1.getCreditOrders);
+router.get('/credit/orders/:id', retailerController_1.getCreditOrder);
+router.post('/credit/request', retailerController_1.requestCredit);
+router.post('/credit/orders/:id/repay', retailerController_1.makeRepayment);
+// Profile Routes
+router.get('/profile', retailerController_1.getProfile);
+router.put('/profile', retailerController_1.updateProfile);
+// POS Routes
+router.get('/pos/products', retailerController_1.getPOSProducts);
+router.post('/pos/scan', retailerController_1.scanBarcode);
+router.post('/pos/sale', retailerController_1.createSale);
+router.get('/pos/daily-sales', retailerController_1.getDailySales);
+// Wholesaler Products (for Add Stock)
+router.get('/wholesaler/products', retailerController_1.getWholesalerProducts);
 exports.default = router;

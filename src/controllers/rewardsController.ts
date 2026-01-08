@@ -173,7 +173,7 @@ export const getLeaderboard = async (req: AuthRequest, res: Response) => {
         const rewards = await prisma.gasReward.findMany({
             where: dateFilter ? { createdAt: { gte: dateFilter } } : {},
             include: {
-                consumer: {
+                consumerProfile: {
                     include: {
                         user: {
                             select: {
@@ -192,8 +192,8 @@ export const getLeaderboard = async (req: AuthRequest, res: Response) => {
             if (!acc[consumerId]) {
                 acc[consumerId] = {
                     consumerId,
-                    name: reward.consumer.user.name || 'Anonymous',
-                    userId: reward.consumer.user.id,
+                    name: reward.consumerProfile.user.name || 'Anonymous',
+                    userId: reward.consumerProfile.user.id,
                     points: 0
                 };
             }
