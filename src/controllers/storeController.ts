@@ -55,7 +55,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           totalAmount: total,
           status: 'pending',
           paymentMethod: paymentMethod,
-          items: {
+          saleItems: {
             create: items.map((item: any) => ({
               productId: item.productId,
               quantity: item.quantity,
@@ -63,7 +63,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
             }))
           }
         },
-        include: { items: true }
+        include: { saleItems: true }
       });
 
       // 3. Update Product Stock (Optional based on business logic, assuming simple stock handling)
@@ -142,10 +142,10 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
     const sales = await prisma.sale.findMany({
       where: { consumerId: consumerProfile.id },
       include: {
-        items: {
+        saleItems: {
           include: { product: true }
         },
-        retailer: {
+        retailerProfile: {
           select: {
             id: true,
             shopName: true,
@@ -170,11 +170,11 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
       status: sale.status,
       retailer: {
         id: sale.retailerId,
-        name: sale.retailer.shopName,
-        location: sale.retailer.address || 'Unknown Location',
-        phone: sale.retailer.user?.phone || 'N/A'
+        name: sale.retailerProfile.shopName,
+        location: sale.retailerProfile.address || 'Unknown Location',
+        phone: sale.retailerProfile.user?.phone || 'N/A'
       },
-      items: sale.items.map(item => ({
+      items: sale.saleItems.map(item => ({
         id: item.id,
         product_id: item.productId,
         product_name: item.product.name,

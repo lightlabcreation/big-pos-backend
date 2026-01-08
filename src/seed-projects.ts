@@ -80,7 +80,7 @@ async function seedProjects() {
 
     // Create project
     const project = await prisma.project.create({
-      data: projectFields
+      data: projectFields as any
     });
 
     // Add employee as project member
