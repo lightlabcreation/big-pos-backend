@@ -7,364 +7,395 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  consumer
-  retailer
-  wholesaler
-  employee
-  admin
-}
-
 model User {
-  id        String   @id @default(uuid())
-  email     String?  @unique
-  phone     String?  @unique
-  password  String?
-  pin       String?
-  name      String?
-  role      Role
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id                String             @id @default(uuid())
+  email             String?            @unique
+  phone             String?            @unique
+  password          String?
+  pin               String?
+  name              String?
+  role              Role
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  consumerProfile   ConsumerProfile?
+  employeeProfile   EmployeeProfile?
+  receivedMessages  Message[]          @relation("ReceivedMessages")
+  sentMessages      Message[]          @relation("SentMessages")
+  notifications     Notification[]
   retailerProfile   RetailerProfile?
   wholesalerProfile WholesalerProfile?
-  employeeProfile   EmployeeProfile?
-  consumerProfile   ConsumerProfile?
-
-  notifications     Notification[]
-  sentMessages      Message[] @relation("SentMessages")
-  receivedMessages  Message[] @relation("ReceivedMessages")
 }
 
 model RetailerProfile {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id])
-  shopName      String
-  address       String?
-  creditLimit   Float    @default(0)
-  walletBalance Float    @default(0)
-  
-  inventory       Product[]
-  orders          Order[]
-  sales           Sale[]
-  branches        Branch[]
-  nfcCards        NfcCard[]
-  credit          RetailerCredit?
-  creditRequests  CreditRequest[]
+  id             String          @id @default(uuid())
+  userId         String          @unique
+  shopName       String
+  address        String?
+  creditLimit    Float           @default(0)
+  walletBalance  Float           @default(0)
+  isVerified     Boolean         @default(false)
+  branches       Branch[]
+  creditRequests CreditRequest[]
+  nfcCards       NfcCard[]
+  orders         Order[]
+  inventory      Product[]
+  credit         RetailerCredit?
+  user           User            @relation(fields: [userId], references: [id])
+  sales          Sale[]
 }
 
 model WholesalerProfile {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id])
-  companyName   String
-  contactPerson String?
-  tinNumber     String?
-  address       String?
-  
-  inventory      Product[]
-  receivedOrders Order[]
-  suppliers      Supplier[]
+  id               String              @id @default(uuid())
+  userId           String              @unique
+  companyName      String
+  contactPerson    String?
+  tinNumber        String?
+  address          String?
+  receivedOrders   Order[]
+  inventory        Product[]
+  suppliers        Supplier[]
   supplierPayments SupplierPayment[]
-  settings       WholesalerSettings?
+  user             User                @relation(fields: [userId], references: [id])
+  settings         WholesalerSettings?
 }
 
 model WholesalerSettings {
-  id                String   @id @default(uuid())
-  wholesalerId      String   @unique
-  wholesaler        WholesalerProfile @relation(fields: [wholesalerId], references: [id])
-  
-  // Notification Preferences
-  pushNotifications Boolean  @default(true)
-  emailNotifications Boolean @default(true)
-  smsNotifications  Boolean  @default(true)
-  ussdAlerts        Boolean  @default(false)
-  
-  // USSD Configuration
-  ussdBusinessCode  String   @default("WHL001")
-  ussdLanguage      String   @default("en")
-  ussdAutoResponse  Boolean  @default(true)
-  
-  // Business Settings
-  paymentTerms      String   @default("net30")
-  defaultCreditLimit Float    @default(50000)
-  acceptedPayments  Json?    // Array of methods like ["wallet", "momo"]
-  
-  // POS & Hardware
-  receiptPrinter    String   @default("bluetooth")
-  barcodeScanner    String   @default("camera")
-  nfcEnabled        Boolean  @default(true)
-  
-  updatedAt         DateTime @updatedAt
+  id                 String            @id @default(uuid())
+  wholesalerId       String            @unique
+  pushNotifications  Boolean           @default(true)
+  emailNotifications Boolean           @default(true)
+  smsNotifications   Boolean           @default(true)
+  ussdAlerts         Boolean           @default(false)
+  ussdBusinessCode   String            @default("WHL001")
+  ussdLanguage       String            @default("en")
+  ussdAutoResponse   Boolean           @default(true)
+  paymentTerms       String            @default("net30")
+  defaultCreditLimit Float             @default(50000)
+  acceptedPayments   Json?
+  receiptPrinter     String            @default("bluetooth")
+  barcodeScanner     String            @default("camera")
+  nfcEnabled         Boolean           @default(true)
+  updatedAt          DateTime          @updatedAt
+  wholesaler         WholesalerProfile @relation(fields: [wholesalerId], references: [id])
 }
 
 model EmployeeProfile {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  employeeNumber String   @unique
+  id             String         @id @default(uuid())
+  userId         String         @unique
+  employeeNumber String         @unique
   department     String
   position       String
-  salary         Float    @default(0)
-  joiningDate    DateTime @default(now())
-  status         String   @default("active") // active, inactive, on_leave
+  salary         Float          @default(0)
+  joiningDate    DateTime       @default(now())
+  status         String         @default("active")
   bankAccount    String?
+  Attendance     Attendance[]
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  LeaveRequest   LeaveRequest[]
 }
 
 model ConsumerProfile {
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id])
-  fullName        String?
-  address         String?
-  landmark        String?
-  isVerified      Boolean  @default(false)
-  membershipType  String   @default("standard")
-  walletBalance   Float    @default(0)
-  rewardsPoints   Float    @default(0)
-  
-  orders          Sale[]
-  nfcCards        NfcCard[]
-  loans           Loan[]
-  wallets         Wallet[]
-  gasMeters       GasMeter[]
-  gasTopups       GasTopup[]
-  gasRewards      GasReward[]
-  customerOrders  CustomerOrder[]
+  id             String          @id @default(uuid())
+  userId         String          @unique
+  fullName       String?
+  address        String?
+  landmark       String?
+  isVerified     Boolean         @default(false)
+  membershipType String          @default("standard")
+  walletBalance  Float           @default(0)
+  rewardsPoints  Float           @default(0)
+  user           User            @relation(fields: [userId], references: [id])
+  customerOrders CustomerOrder[]
+  gasMeters      GasMeter[]
+  gasRewards     GasReward[]
+  gasTopups      GasTopup[]
+  loans          Loan[]
+  nfcCards       NfcCard[]
+  orders         Sale[]
+  wallets        Wallet[]
 }
 
 model Product {
-  id                String   @id @default(uuid())
+  id                String             @id @default(uuid())
   name              String
   description       String?
   sku               String?
   category          String
-  price             Float    // Wholesaler selling price (for backward compatibility)
-  costPrice         Float?   // Supplier cost price
-  stock             Int      @default(0)
-  unit              String?  // e.g., "kg", "liters", "units", "packs"
-  lowStockThreshold Int?     // Alert when stock falls below this level
-  invoiceNumber     String?  // Wholesaler invoice number for retailer reference
-  barcode           String?  // Product barcode
-  status            String   @default("active") // active, inactive
-  
-  retailerId   String?
-  retailer     RetailerProfile? @relation(fields: [retailerId], references: [id])
-  wholesalerId String?
-  wholesaler   WholesalerProfile? @relation(fields: [wholesalerId], references: [id])
-  supplierId   String?
-  supplier     Supplier? @relation(fields: [supplierId], references: [id])
-  
-  orderItems   OrderItem[]
-  saleItems    SaleItem[]
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  price             Float
+  costPrice         Float?
+  stock             Int                @default(0)
+  unit              String?
+  lowStockThreshold Int?
+  invoiceNumber     String?
+  barcode           String?
+  status            String             @default("active")
+  retailerId        String?
+  wholesalerId      String?
+  supplierId        String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  orderItems        OrderItem[]
+  retailer          RetailerProfile?   @relation(fields: [retailerId], references: [id])
+  supplier          Supplier?          @relation(fields: [supplierId], references: [id])
+  vendorId          String?
+  vendor            Vendor?            @relation(fields: [vendorId], references: [id])
+  wholesaler        WholesalerProfile? @relation(fields: [wholesalerId], references: [id])
+  saleItems         SaleItem[]
+
+  @@index([retailerId], map: "Product_retailerId_fkey")
+  @@index([supplierId], map: "Product_supplierId_fkey")
+  @@index([wholesalerId], map: "Product_wholesalerId_fkey")
 }
 
 model Order {
-  id            String   @id @default(uuid())
+  id            String            @id @default(uuid())
   retailerId    String
-  retailer      RetailerProfile @relation(fields: [retailerId], references: [id])
   wholesalerId  String
-  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
   status        String
   totalAmount   Float
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  retailer      RetailerProfile   @relation(fields: [retailerId], references: [id])
+  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
   items         OrderItem[]
   profitInvoice ProfitInvoice?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  @@index([retailerId], map: "Order_retailerId_fkey")
+  @@index([wholesalerId], map: "Order_wholesalerId_fkey")
 }
 
 model OrderItem {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   orderId   String
-  order     Order    @relation(fields: [orderId], references: [id])
   productId String
-  product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
   price     Float
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId], map: "OrderItem_orderId_fkey")
+  @@index([productId], map: "OrderItem_productId_fkey")
 }
 
 model Sale {
-  id            String   @id @default(uuid())
+  id            String           @id @default(uuid())
   retailerId    String
-  retailer      RetailerProfile @relation(fields: [retailerId], references: [id])
   consumerId    String?
-  consumer      ConsumerProfile? @relation(fields: [consumerId], references: [id])
   branchId      String?
-  branch        Branch?  @relation(fields: [branchId], references: [id])
   status        String
   totalAmount   Float
   paymentMethod String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  branch        Branch?          @relation(fields: [branchId], references: [id])
+  consumer      ConsumerProfile? @relation(fields: [consumerId], references: [id])
+  retailer      RetailerProfile  @relation(fields: [retailerId], references: [id])
   items         SaleItem[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  @@index([branchId], map: "Sale_branchId_fkey")
+  @@index([consumerId], map: "Sale_consumerId_fkey")
+  @@index([retailerId], map: "Sale_retailerId_fkey")
 }
 
 model SaleItem {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   saleId    String
-  sale      Sale     @relation(fields: [saleId], references: [id])
   productId String
-  product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
   price     Float
+  product   Product @relation(fields: [productId], references: [id])
+  sale      Sale    @relation(fields: [saleId], references: [id])
+
+  @@index([productId], map: "SaleItem_productId_fkey")
+  @@index([saleId], map: "SaleItem_saleId_fkey")
 }
 
 model Branch {
-  id         String   @id @default(uuid())
+  id         String          @id @default(uuid())
   retailerId String
-  retailer   RetailerProfile @relation(fields: [retailerId], references: [id])
   name       String
   location   String?
+  retailer   RetailerProfile @relation(fields: [retailerId], references: [id])
   sales      Sale[]
   terminals  Terminal[]
+
+  @@index([retailerId], map: "Branch_retailerId_fkey")
 }
 
 model Terminal {
-  id           String   @id @default(uuid())
+  id           String @id @default(uuid())
   branchId     String
-  branch       Branch   @relation(fields: [branchId], references: [id])
   name         String
-  serialNumber String   @unique
+  serialNumber String @unique
+  branch       Branch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId], map: "Terminal_branchId_fkey")
 }
 
 model NfcCard {
-  id          String   @id @default(uuid())
-  uid         String   @unique
-  pin         String?
-  status      String
-  consumerId  String?
-  consumer    ConsumerProfile? @relation(fields: [consumerId], references: [id])
-  retailerId  String?
-  retailer    RetailerProfile? @relation(fields: [retailerId], references: [id])
-  balance     Float    @default(0)
-  createdAt   DateTime @default(now())
+  id         String           @id @default(uuid())
+  uid        String           @unique
+  pin        String?
+  status     String
+  consumerId String?
+  retailerId String?
+  balance    Float            @default(0)
+  createdAt  DateTime         @default(now())
+  consumer   ConsumerProfile? @relation(fields: [consumerId], references: [id])
+  retailer   RetailerProfile? @relation(fields: [retailerId], references: [id])
+
+  @@index([consumerId], map: "NfcCard_consumerId_fkey")
+  @@index([retailerId], map: "NfcCard_retailerId_fkey")
 }
 
 model Loan {
-  id          String   @id @default(uuid())
-  consumerId  String
-  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
-  amount      Float
-  status      String
-  dueDate     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String          @id @default(uuid())
+  consumerId String
+  amount     Float
+  status     String
+  dueDate    DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  consumer   ConsumerProfile @relation(fields: [consumerId], references: [id])
+
+  @@index([consumerId], map: "Loan_consumerId_fkey")
 }
 
 model Message {
   id         String   @id @default(uuid())
   senderId   String
-  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
   receiverId String
-  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
   content    String
   createdAt  DateTime @default(now())
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([receiverId], map: "Message_receiverId_fkey")
+  @@index([senderId], map: "Message_senderId_fkey")
 }
 
 model Notification {
   id        String   @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
   title     String
   message   String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId], map: "Notification_userId_fkey")
 }
 
-// Consumer Wallet System
 model Wallet {
-  id          String   @id @default(uuid())
-  consumerId  String
-  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
-  type        String   // "dashboard_wallet" or "credit_wallet"
-  balance     Float    @default(0)
-  currency    String   @default("RWF")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  id           String              @id @default(uuid())
+  consumerId   String
+  type         String
+  balance      Float               @default(0)
+  currency     String              @default("RWF")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  consumer     ConsumerProfile     @relation(fields: [consumerId], references: [id])
   transactions WalletTransaction[]
-  
+
   @@unique([consumerId, type])
 }
 
 model WalletTransaction {
   id          String   @id @default(uuid())
   walletId    String
-  wallet      Wallet   @relation(fields: [walletId], references: [id])
-  type        String   // "credit", "debit", "topup", "refund"
+  type        String
   amount      Float
   description String?
-  reference   String?  // Order ID or transaction reference
-  status      String   @default("completed") // pending, completed, failed
+  reference   String?
+  status      String   @default("completed")
   createdAt   DateTime @default(now())
+  wallet      Wallet   @relation(fields: [walletId], references: [id])
+
+  @@index([walletId], map: "WalletTransaction_walletId_fkey")
 }
 
-// Gas Service
 model GasMeter {
-  id          String   @id @default(uuid())
+  id          String          @id @default(uuid())
   consumerId  String
-  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
-  meterNumber String   @unique
+  meterNumber String          @unique
   aliasName   String?
   ownerName   String?
   ownerPhone  String?
-  status      String   @default("active") // active, inactive, removed
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  status      String          @default("active")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
   topups      GasTopup[]
+
+  @@index([consumerId], map: "GasMeter_consumerId_fkey")
 }
 
 model GasTopup {
-  id          String   @id @default(uuid())
-  consumerId  String
-  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
-  meterId     String
-  meter       GasMeter @relation(fields: [meterId], references: [id])
-  amount      Float
-  units       Float    // cubic meters (m3)
-  currency    String   @default("RWF")
-  status      String   @default("completed")
-  orderId     String?  // Link to CustomerOrder
-  createdAt   DateTime @default(now())
+  id         String          @id @default(uuid())
+  consumerId String
+  meterId    String
+  amount     Float
+  units      Float
+  currency   String          @default("RWF")
+  status     String          @default("completed")
+  orderId    String?
+  createdAt  DateTime        @default(now())
+  consumer   ConsumerProfile @relation(fields: [consumerId], references: [id])
+  meter      GasMeter        @relation(fields: [meterId], references: [id])
+
+  @@index([consumerId], map: "GasTopup_consumerId_fkey")
+  @@index([meterId], map: "GasTopup_meterId_fkey")
 }
 
 model GasReward {
-  id          String   @id @default(uuid())
-  consumerId  String
-  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
-  units       Float    // m3 earned
-  source      String   // "purchase", "referral", "bonus"
-  reference   String?  // Order ID or source reference
-  createdAt   DateTime @default(now())
+  id         String          @id @default(uuid())
+  consumerId String
+  units      Float
+  source     String
+  reference  String?
+  createdAt  DateTime        @default(now())
+  consumer   ConsumerProfile @relation(fields: [consumerId], references: [id])
+
+  @@index([consumerId], map: "GasReward_consumerId_fkey")
 }
 
-// Customer Orders (separate from retailer/wholesaler orders)
 model CustomerOrder {
-  id          String   @id @default(uuid())
-  consumerId  String
-  consumer    ConsumerProfile @relation(fields: [consumerId], references: [id])
-  orderType   String   // "gas", "shop"
-  status      String   // "active", "completed", "credit", "cancelled"
-  amount      Float
-  currency    String   @default("RWF")
-  items       Json?    // Store order items as JSON
-  metadata    Json?    // Additional data
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String          @id @default(uuid())
+  consumerId String
+  orderType  String
+  status     String
+  amount     Float
+  currency   String          @default("RWF")
+  items      Json?
+  metadata   Json?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  consumer   ConsumerProfile @relation(fields: [consumerId], references: [id])
+
+  @@index([consumerId], map: "CustomerOrder_consumerId_fkey")
 }
 
-// ============================================
-// WHOLESALE MANAGEMENT SYSTEM TABLES
-// ============================================
-
-// Suppliers - Companies that supply products to wholesaler
 model Supplier {
+  id            String            @id @default(uuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  status        String            @default("active")
+  wholesalerId  String
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  products      Product[]
+  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+  payments      SupplierPayment[]
+
+  @@index([wholesalerId], map: "Supplier_wholesalerId_fkey")
+}
+
+// Vendors - Global vendors managed by Admin
+model Vendor {
   id            String   @id @default(uuid())
   name          String
   contactPerson String?
@@ -372,112 +403,103 @@ model Supplier {
   email         String?
   address       String?
   status        String   @default("active") // active, inactive
-  wholesalerId  String
-  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
   products      Product[]
-  payments      SupplierPayment[]
 }
 
-// Supplier Payments - Track payments made to suppliers
 model SupplierPayment {
-  id            String   @id @default(uuid())
-  supplierId    String
-  supplier      Supplier @relation(fields: [supplierId], references: [id])
-  amount        Float
-  paymentDate   DateTime
-  reference     String?
-  status        String   @default("completed") // pending, completed
-  notes         String?
-  wholesalerId  String
-  wholesaler    WholesalerProfile @relation(fields: [wholesalerId], references: [id])
-  createdAt     DateTime @default(now())
+  id           String            @id @default(uuid())
+  supplierId   String
+  amount       Float
+  paymentDate  DateTime
+  reference    String?
+  status       String            @default("completed")
+  notes        String?
+  wholesalerId String
+  createdAt    DateTime          @default(now())
+  supplier     Supplier          @relation(fields: [supplierId], references: [id])
+  wholesaler   WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+
+  @@index([supplierId], map: "SupplierPayment_supplierId_fkey")
+  @@index([wholesalerId], map: "SupplierPayment_wholesalerId_fkey")
 }
 
-// Retailer Credit - Credit limits and usage for retailers
 model RetailerCredit {
-  id              String   @id @default(uuid())
-  retailerId      String   @unique
+  id              String          @id @default(uuid())
+  retailerId      String          @unique
+  creditLimit     Float           @default(0)
+  usedCredit      Float           @default(0)
+  availableCredit Float           @default(0)
+  updatedAt       DateTime        @updatedAt
   retailer        RetailerProfile @relation(fields: [retailerId], references: [id])
-  creditLimit     Float    @default(0)
-  usedCredit      Float    @default(0)
-  availableCredit Float    @default(0)
-  updatedAt       DateTime @updatedAt
 }
 
-// Credit Requests - Retailers requesting credit increase
 model CreditRequest {
-  id          String   @id @default(uuid())
+  id          String          @id @default(uuid())
   retailerId  String
-  retailer    RetailerProfile @relation(fields: [retailerId], references: [id])
   amount      Float
   reason      String?
-  status      String   @default("pending") // pending, approved, rejected
+  status      String          @default("pending")
   reviewedAt  DateTime?
   reviewNotes String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime        @default(now())
+  retailer    RetailerProfile @relation(fields: [retailerId], references: [id])
+
+  @@index([retailerId], map: "CreditRequest_retailerId_fkey")
 }
 
-// Profit Invoices - Track profit made on each order
 model ProfitInvoice {
-  id              String   @id @default(uuid())
-  orderId         String   @unique
-  order           Order    @relation(fields: [orderId], references: [id])
-  profitAmount    Float
-  invoiceNumber   String   @unique
-  generatedAt     DateTime @default(now())
+  id            String   @id @default(uuid())
+  orderId       String   @unique
+  profitAmount  Float
+  invoiceNumber String   @unique
+  generatedAt   DateTime @default(now())
+  order         Order    @relation(fields: [orderId], references: [id])
 }
-
-// ============================================
-// RECRUITMENT SYSTEM
-// ============================================
 
 model JobPosting {
-  id           String   @id @default(uuid())
+  id           String           @id @default(uuid())
   title        String
   department   String
-  type         String   // full_time, part_time, contract
+  type         String
   salaryMin    Float
   salaryMax    Float
   location     String
-  description  String   @db.Text
-  status       String   @default("open") // open, closed
-  postedDate   DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
+  description  String           @db.Text
+  status       String           @default("open")
+  postedDate   DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
   applications JobApplication[]
 }
 
 model JobApplication {
   id          String     @id @default(uuid())
   jobId       String
-  job         JobPosting @relation(fields: [jobId], references: [id])
   name        String
   email       String
   phone       String
   resumeUrl   String?
-  status      String     @default("applied") // applied, screening, interview, offer, hired, rejected
+  status      String     @default("applied")
   appliedDate DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  job         JobPosting @relation(fields: [jobId], references: [id])
+
+  @@index([jobId], map: "JobApplication_jobId_fkey")
 }
 
-// ============================================
-// DEALS / SALES PIPELINE
-// ============================================
-
 model Deal {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   title             String
   clientName        String
   value             Float
-  stage             String   // lead, qualified, proposal, negotiation, closed_won, closed_lost
-  probability       Float    // 0-100
-  owner             String   // Name of employee who owns this deal
+  stage             String
+  probability       Float
+  owner             String
   expectedCloseDate DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
 
 model Category {
@@ -488,4 +510,46 @@ model Category {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Attendance {
+  id              String          @id
+  employeeId      String
+  date            DateTime
+  checkIn         DateTime
+  checkOut        DateTime?
+  status          String
+  location        String?
+  workHours       Float           @default(0)
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  EmployeeProfile EmployeeProfile @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId], map: "Attendance_employeeId_fkey")
+}
+
+model LeaveRequest {
+  id              String          @id
+  employeeId      String
+  type            String
+  startDate       DateTime
+  endDate         DateTime
+  reason          String?
+  status          String          @default("pending")
+  approvedBy      String?
+  rejectionReason String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  EmployeeProfile EmployeeProfile @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId], map: "LeaveRequest_employeeId_fkey")
+}
+
+enum Role {
+  consumer
+  retailer
+  wholesaler
+  employee
+  admin
 }

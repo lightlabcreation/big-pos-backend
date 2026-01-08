@@ -1,4 +1,5 @@
 import express from 'express';
+// Restart trigger 3
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes';
@@ -9,6 +10,7 @@ import employeeRoutes from './routes/employeeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
+import vendorRoutes from './routes/vendorRoutes';
 
 dotenv.config();
 
@@ -16,9 +18,13 @@ const app = express();
 const PORT = process.env.PORT || 9000;
 
 app.use(cors({
-  origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "http://localhost:5173", "http://localhost:9000"],
-  credentials: true
+  origin: true, // Allow ALL origins (reflection)
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+// Handle preflight requests explicitly
+app.options(/.*$/, cors());
 app.use(express.json());
 
 // Routes
@@ -30,6 +36,10 @@ app.use('/employee/auth', authRoutes);
 
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
+app.use('/wholesaler', wholesalerRoutes);
+app.use('/admin', adminRoutes);
+app.use('/admin/vendors', vendorRoutes);
+app.use('/employee', employeeRoutes);
 import debugRoutes from './routes/debugRoutes';
 
 // ... imports
@@ -45,7 +55,7 @@ app.get('/', (req, res) => {
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('SERVER ERROR:', err);
-  
+
   // Log to file
   try {
     const fs = require('fs');
@@ -57,7 +67,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     console.error('Failed to write to error log:', fsError);
   }
 
-  res.status(500).json({ 
+  res.status(500).json({
     success: false,
     message: 'Internal Server Error',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined

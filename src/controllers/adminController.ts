@@ -306,6 +306,27 @@ export const deleteRetailer = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const verifyRetailer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if retailer exists
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
+    if (!retailer) return res.status(404).json({ error: 'Retailer not found' });
+
+    // Update isVerified status
+    const updatedRetailer = await prisma.retailerProfile.update({
+      where: { id },
+      data: { isVerified: true }
+    });
+
+    res.json({ success: true, message: 'Retailer verified successfully', retailer: updatedRetailer });
+  } catch (error: any) {
+    console.error('Verify Retailer Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // ==========================================
 // WHOLESALER MANAGEMENT (Extra CRUD)
 // ==========================================
@@ -372,6 +393,37 @@ export const deleteWholesaler = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, message: 'Wholesaler deleted' });
   } catch (error: any) {
     console.error('Delete Wholesaler Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateWholesalerStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isActive, status } = req.body;
+
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    if (!wholesaler) return res.status(404).json({ error: 'Wholesaler not found' });
+
+    // Determine new status (support both formats for backward compatibility/safety)
+    let newStatus = false;
+    if (typeof isActive === 'boolean') {
+      newStatus = isActive;
+    } else if (status === 'active') {
+      newStatus = true;
+    }
+
+    // Update User status (since login depends on User.isActive)
+    await prisma.user.update({
+      where: { id: wholesaler.userId },
+      data: {
+        isActive: newStatus
+      }
+    });
+
+    res.json({ success: true, message: `Wholesaler status updated to ${newStatus ? 'active' : 'inactive'}` });
+  } catch (error: any) {
+    console.error('Update Wholesaler Status Error:', error);
     res.status(500).json({ error: error.message });
   }
 };
