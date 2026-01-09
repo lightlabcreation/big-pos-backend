@@ -34,7 +34,7 @@ function main() {
                 wholesalerId: product.wholesalerId,
                 totalAmount: product.costPrice ? product.costPrice * 10 : 1000,
                 status: 'pending',
-                items: {
+                orderItems: {
                     create: {
                         productId: product.id,
                         quantity: 10,

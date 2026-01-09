@@ -15,6 +15,10 @@ router.post('/auth/logout', authMiddleware_1.authenticate, customerController_1.
 // Protected routes - Customer Profile
 router.get('/customers/me', authMiddleware_1.authenticate, customerController_1.getCustomerProfile);
 router.put('/customers/me', authMiddleware_1.authenticate, customerController_1.updateCustomerProfile);
+router.get('/customers/me/stats', authMiddleware_1.authenticate, customerController_1.getProfileStats);
+router.get('/customers/me/activity', authMiddleware_1.authenticate, customerController_1.getRecentActivity);
+router.get('/customers/me/preferences', authMiddleware_1.authenticate, customerController_1.getNotificationPreferences);
+router.put('/customers/me/preferences', authMiddleware_1.authenticate, customerController_1.updateNotificationPreferences);
 // Protected routes - Wallets
 router.get('/wallets', authMiddleware_1.authenticate, customerController_1.getWallets);
 router.post('/wallets/topup', authMiddleware_1.authenticate, customerController_1.topupWallet);
@@ -30,14 +34,24 @@ router.get('/gas/usage', authMiddleware_1.authenticate, gasController_1.getGasUs
 router.get('/gas/rewards/balance', authMiddleware_1.authenticate, gasController_1.getGasRewardsBalance);
 router.get('/gas/rewards/history', authMiddleware_1.authenticate, gasController_1.getGasRewardsHistory);
 router.get('/gas/rewards/leaderboard', authMiddleware_1.authenticate, gasController_1.getGasRewardsLeaderboard);
+// Rewards - Referral & Redemption
+router.get('/rewards/referral-code', authMiddleware_1.authenticate, customerController_1.getReferralCode);
+router.post('/rewards/redeem', authMiddleware_1.authenticate, customerController_1.redeemGasRewards);
 // Protected routes - Orders
-router.get('/customers/me/orders', authMiddleware_1.authenticate, gasController_1.getCustomerOrders);
+router.get('/customers/me/orders', authMiddleware_1.authenticate, storeController_1.getMyOrders);
 router.get('/orders/:id', authMiddleware_1.authenticate, gasController_1.getOrderDetails);
+router.post('/orders/:id/cancel', authMiddleware_1.authenticate, storeController_1.cancelOrder);
+router.post('/orders/:id/confirm-delivery', authMiddleware_1.authenticate, storeController_1.confirmDelivery);
+router.post('/orders', authMiddleware_1.authenticate, storeController_1.createOrder);
 // Legacy routes (keep for backward compatibility)
 router.get('/orders', authMiddleware_1.authenticate, storeController_1.getMyOrders);
 router.get('/wallet/balance', authMiddleware_1.authenticate, storeController_1.getWalletBalance);
 router.get('/rewards/balance', authMiddleware_1.authenticate, storeController_1.getRewardsBalance);
-router.get('/loans', authMiddleware_1.authenticate, storeController_1.getLoans);
-router.get('/loans/products', authMiddleware_1.authenticate, storeController_1.getLoanProducts);
-router.get('/loans/check-eligibility', authMiddleware_1.authenticate, storeController_1.checkLoanEligibility);
+router.get('/loans', authMiddleware_1.authenticate, storeController_1.getLoans); // List of loans
+router.get('/loans/active', authMiddleware_1.authenticate, storeController_1.getActiveLoanLedger); // Active loan detailed ledger
+router.get('/loans/transactions', authMiddleware_1.authenticate, storeController_1.getCreditTransactions); // filtered credit-related transactions
+router.get('/loans/eligibility', authMiddleware_1.authenticate, storeController_1.checkLoanEligibility);
+router.post('/loans/apply', authMiddleware_1.authenticate, storeController_1.applyForLoan);
+router.post('/loans/:id/repay', authMiddleware_1.authenticate, storeController_1.repayLoan);
+router.get('/loans/food-credit', authMiddleware_1.authenticate, storeController_1.getFoodCredit);
 exports.default = router;

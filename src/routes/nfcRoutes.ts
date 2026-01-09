@@ -5,7 +5,8 @@ import {
     unlinkCard,
     setCardPin,
     setPrimaryCard,
-    updateCardNickname
+    updateCardNickname,
+    getCardOrders
 } from '../controllers/nfcController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -20,5 +21,6 @@ router.delete('/cards/:id', unlinkCard);
 router.put('/cards/:id/pin', setCardPin);
 router.put('/cards/:id/primary', setPrimaryCard);
 router.put('/cards/:id/nickname', updateCardNickname);
+router.get('/cards/:cardId/orders', getCardOrders);
 
 export default router;

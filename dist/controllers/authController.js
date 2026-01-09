@@ -44,18 +44,21 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const hashedPin = pin ? yield (0, auth_1.hashPassword)(pin) : undefined;
         const user = yield prisma_1.default.user.create({
             data: {
+                id: crypto.randomUUID(),
                 email,
                 phone,
                 password: hashedPassword,
                 pin: hashedPin, // Store pin (hashed)
                 role: targetuser_role,
                 name: first_name ? `${first_name} ${last_name || ''}`.trim() : (business_name || company_name || shop_name),
+                updatedAt: new Date()
             }
         });
         // Create Profile
         if (targetuser_role === 'consumer') {
             yield prisma_1.default.consumerProfile.create({
                 data: {
+                    id: crypto.randomUUID(),
                     userId: user.id
                 }
             });
@@ -63,6 +66,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         else if (targetuser_role === 'retailer') {
             yield prisma_1.default.retailerProfile.create({
                 data: {
+                    id: crypto.randomUUID(),
                     userId: user.id,
                     shopName: shop_name || business_name || 'My Shop',
                     address: req.body.address
@@ -72,6 +76,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         else if (targetuser_role === 'wholesaler') {
             yield prisma_1.default.wholesalerProfile.create({
                 data: {
+                    id: crypto.randomUUID(),
                     userId: user.id,
                     companyName: company_name || 'My Company',
                     address: req.body.address

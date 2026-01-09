@@ -107,7 +107,7 @@ const getManagementSuppliers = (req, res) => __awaiter(void 0, void 0, void 0, f
             },
             include: {
                 products: true,
-                payments: {
+                supplierPayments: {
                     where: { wholesalerId: wholesalerProfile.id }
                 }
             },
@@ -115,7 +115,7 @@ const getManagementSuppliers = (req, res) => __awaiter(void 0, void 0, void 0, f
         });
         // Transform suppliers to match frontend expectations
         const transformedSuppliers = suppliers.map((supplier) => {
-            const totalPaid = (supplier.payments || [])
+            const totalPaid = (supplier.supplierPayments || [])
                 .filter((p) => p.status === 'completed')
                 .reduce((sum, p) => sum + p.amount, 0);
             const totalProductCost = (supplier.products || []).reduce((sum, product) => {
@@ -132,7 +132,7 @@ const getManagementSuppliers = (req, res) => __awaiter(void 0, void 0, void 0, f
                 address: supplier.address || '',
                 status: supplier.status,
                 payment_terms: 'Net 30', // Default, can be added to schema later
-                total_orders: (supplier.payments || []).length,
+                total_orders: (supplier.supplierPayments || []).length,
                 total_paid: totalPaid,
                 outstanding_balance: outstandingBalance,
                 products_supplied: (supplier.products || []).length,
@@ -168,7 +168,7 @@ const getSupplierDetails = (req, res) => __awaiter(void 0, void 0, void 0, funct
             },
             include: {
                 products: true,
-                payments: {
+                supplierPayments: {
                     where: { wholesalerId: wholesalerProfile.id },
                     orderBy: { paymentDate: 'desc' }
                 }
@@ -177,7 +177,7 @@ const getSupplierDetails = (req, res) => __awaiter(void 0, void 0, void 0, funct
         if (!supplier) {
             return res.status(404).json({ error: 'Supplier not found' });
         }
-        const totalPaid = (supplier.payments || [])
+        const totalPaid = (supplier.supplierPayments || [])
             .filter((p) => p.status === 'completed')
             .reduce((sum, p) => sum + p.amount, 0);
         const totalProductCost = (supplier.products || []).reduce((sum, product) => {
@@ -194,12 +194,12 @@ const getSupplierDetails = (req, res) => __awaiter(void 0, void 0, void 0, funct
             address: supplier.address || '',
             status: supplier.status,
             payment_terms: 'Net 30',
-            total_orders: (supplier.payments || []).length,
+            total_orders: (supplier.supplierPayments || []).length,
             total_paid: totalPaid,
             outstanding_balance: outstandingBalance,
             products_supplied: (supplier.products || []).length,
             created_at: supplier.createdAt.toISOString(),
-            payments: (supplier.payments || []).map((p) => ({
+            payments: (supplier.supplierPayments || []).map((p) => ({
                 id: p.id,
                 amount: p.amount,
                 paymentDate: p.paymentDate.toISOString(),
@@ -289,12 +289,12 @@ const updateSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function*
             data: Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (name && { name })), (contact_person && { contactPerson: contact_person })), (email && { email })), (phone && { phone })), (address && { address })), (status && { status })),
             include: {
                 products: true,
-                payments: {
+                supplierPayments: {
                     where: { wholesalerId: wholesalerProfile.id }
                 }
             }
         });
-        const totalPaid = (supplier.payments || [])
+        const totalPaid = (supplier.supplierPayments || [])
             .filter((p) => p.status === 'completed')
             .reduce((sum, p) => sum + p.amount, 0);
         const totalProductCost = (supplier.products || []).reduce((sum, product) => {
@@ -314,7 +314,7 @@ const updateSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function*
                 address: supplier.address || '',
                 status: supplier.status,
                 payment_terms: 'Net 30',
-                total_orders: (supplier.payments || []).length,
+                total_orders: (supplier.supplierPayments || []).length,
                 total_paid: totalPaid,
                 outstanding_balance: outstandingBalance,
                 products_supplied: (supplier.products || []).length,
@@ -413,12 +413,12 @@ const getProfitInvoiceDetails = (req, res) => __awaiter(void 0, void 0, void 0, 
             include: {
                 order: {
                     include: {
-                        items: {
+                        orderItems: {
                             include: {
                                 product: true
                             }
                         },
-                        retailer: {
+                        retailerProfile: {
                             include: {
                                 user: true
                             }
@@ -445,9 +445,9 @@ const getProfitInvoiceDetails = (req, res) => __awaiter(void 0, void 0, void 0, 
             paid_at: invoice.generatedAt.toISOString(),
             order_details: {
                 id: invoice.order.id,
-                retailer_name: invoice.order.retailer.user.name,
+                retailer_name: invoice.order.retailerProfile.user.name,
                 total_amount: invoice.order.totalAmount,
-                items: invoice.order.items.map(item => ({
+                items: invoice.order.orderItems.map((item) => ({
                     product_name: item.product.name,
                     quantity: item.quantity,
                     price: item.price

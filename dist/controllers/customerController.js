@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getWalletTransactions = exports.requestRefund = exports.topupWallet = exports.getWallets = exports.logout = exports.updateCustomerProfile = exports.getCustomerProfile = void 0;
+exports.redeemGasRewards = exports.getReferralCode = exports.updateNotificationPreferences = exports.getNotificationPreferences = exports.getRecentActivity = exports.getProfileStats = exports.getWalletTransactions = exports.requestRefund = exports.topupWallet = exports.getWallets = exports.logout = exports.updateCustomerProfile = exports.getCustomerProfile = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get customer profile
 const getCustomerProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -311,3 +311,322 @@ const getWalletTransactions = (req, res) => __awaiter(void 0, void 0, void 0, fu
     }
 });
 exports.getWalletTransactions = getWalletTransactions;
+// Get profile stats (total orders, wallet balance, gas rewards)
+const getProfileStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+        // Get total orders count
+        const totalOrders = yield prisma_1.default.customerOrder.count({
+            where: { consumerId: consumerProfile.id }
+        });
+        // Get wallet balances
+        const wallets = yield prisma_1.default.wallet.findMany({
+            where: { consumerId: consumerProfile.id }
+        });
+        const walletBalance = wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
+        // Get gas rewards total
+        const gasRewards = yield prisma_1.default.gasReward.findMany({
+            where: { consumerId: consumerProfile.id }
+        });
+        const totalGasRewards = gasRewards.reduce((sum, reward) => sum + reward.units, 0);
+        res.json({
+            success: true,
+            data: {
+                total_orders: totalOrders,
+                wallet_balance: walletBalance,
+                gas_rewards: totalGasRewards
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get profile stats error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getProfileStats = getProfileStats;
+// Get recent activity
+const getRecentActivity = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+        // Get recent orders
+        const recentOrders = yield prisma_1.default.customerOrder.findMany({
+            where: { consumerId: consumerProfile.id },
+            orderBy: { createdAt: 'desc' },
+            take: 5
+        });
+        // Get recent wallet transactions
+        const wallets = yield prisma_1.default.wallet.findMany({
+            where: { consumerId: consumerProfile.id }
+        });
+        const walletIds = wallets.map(w => w.id);
+        const recentTransactions = yield prisma_1.default.walletTransaction.findMany({
+            where: { walletId: { in: walletIds } },
+            orderBy: { createdAt: 'desc' },
+            take: 5
+        });
+        // Combine and format activities
+        const activities = [];
+        // Add orders to activities
+        recentOrders.forEach(order => {
+            const timeAgo = getTimeAgo(order.createdAt);
+            activities.push({
+                action: `${order.orderType === 'gas' ? 'Gas topup' : 'Shop'} order #${order.id.substring(0, 8)}`,
+                time: timeAgo,
+                type: 'order',
+                created_at: order.createdAt
+            });
+        });
+        // Add transactions to activities
+        recentTransactions.forEach(txn => {
+            const timeAgo = getTimeAgo(txn.createdAt);
+            activities.push({
+                action: txn.description || `${txn.type} ${txn.amount} RWF`,
+                time: timeAgo,
+                type: 'wallet',
+                created_at: txn.createdAt
+            });
+        });
+        // Sort by date and take top 10
+        activities.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        const topActivities = activities.slice(0, 10);
+        res.json({
+            success: true,
+            data: topActivities
+        });
+    }
+    catch (error) {
+        console.error('Get recent activity error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getRecentActivity = getRecentActivity;
+// Get notification preferences
+const getNotificationPreferences = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId },
+            include: { settings: true }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+        // Create default settings if none exist
+        let settings = consumerProfile.settings;
+        if (!settings) {
+            settings = yield prisma_1.default.consumerSettings.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    pushNotifications: true,
+                    emailNotifications: true,
+                    smsNotifications: false
+                }
+            });
+        }
+        res.json({
+            success: true,
+            data: {
+                push_notifications: settings.pushNotifications,
+                email_notifications: settings.emailNotifications,
+                sms_notifications: settings.smsNotifications
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get notification preferences error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getNotificationPreferences = getNotificationPreferences;
+// Update notification preferences
+const updateNotificationPreferences = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const { push_notifications, email_notifications, sms_notifications } = req.body;
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId },
+            include: { settings: true }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+        let settings;
+        const updateData = {};
+        if (push_notifications !== undefined)
+            updateData.pushNotifications = push_notifications;
+        if (email_notifications !== undefined)
+            updateData.emailNotifications = email_notifications;
+        if (sms_notifications !== undefined)
+            updateData.smsNotifications = sms_notifications;
+        if (consumerProfile.settings) {
+            // Update existing settings
+            settings = yield prisma_1.default.consumerSettings.update({
+                where: { id: consumerProfile.settings.id },
+                data: updateData
+            });
+        }
+        else {
+            // Create new settings
+            settings = yield prisma_1.default.consumerSettings.create({
+                data: Object.assign({ consumerId: consumerProfile.id }, updateData)
+            });
+        }
+        res.json({
+            success: true,
+            data: {
+                push_notifications: settings.pushNotifications,
+                email_notifications: settings.emailNotifications,
+                sms_notifications: settings.smsNotifications
+            },
+            message: 'Preferences updated successfully'
+        });
+    }
+    catch (error) {
+        console.error('Update notification preferences error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.updateNotificationPreferences = updateNotificationPreferences;
+// Helper function to calculate time ago
+function getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now.getTime() - new Date(date).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    const diffWeeks = Math.floor(diffMs / 604800000);
+    if (diffMins < 60)
+        return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24)
+        return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7)
+        return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    return `${diffWeeks} week${diffWeeks !== 1 ? 's' : ''} ago`;
+}
+// Get referral code
+const getReferralCode = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const user = yield prisma_1.default.user.findUnique({
+            where: { id: userId },
+            select: { id: true, phone: true }
+        });
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+        // Generate referral code from user ID (deterministic)
+        // Format: BIG + last 6 chars of user ID in uppercase
+        const referralCode = 'BIG' + user.id.slice(-6).toUpperCase();
+        res.json({
+            success: true,
+            data: {
+                referral_code: referralCode
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get referral code error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getReferralCode = getReferralCode;
+// Redeem gas rewards
+const redeemGasRewards = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const { points } = req.body;
+        if (!points || points < 100) {
+            return res.status(400).json({ success: false, error: 'Minimum 100 points required to redeem' });
+        }
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+        // Convert points to m³ (100 points = 1 m³)
+        const unitsToRedeem = points / 100;
+        // Get total available gas rewards
+        const rewards = yield prisma_1.default.gasReward.findMany({
+            where: { consumerId: consumerProfile.id }
+        });
+        const totalUnits = rewards.reduce((sum, r) => sum + r.units, 0);
+        if (totalUnits < unitsToRedeem) {
+            return res.status(400).json({
+                success: false,
+                error: 'Insufficient gas rewards',
+                available: totalUnits * 100
+            });
+        }
+        // Conversion rate: 1 M³ = 1000 RWF
+        const walletCredit = unitsToRedeem * 1000;
+        // Get or create dashboard wallet
+        let wallet = yield prisma_1.default.wallet.findFirst({
+            where: {
+                consumerId: consumerProfile.id,
+                type: 'dashboard_wallet'
+            }
+        });
+        if (!wallet) {
+            wallet = yield prisma_1.default.wallet.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    type: 'dashboard_wallet',
+                    balance: 0,
+                    currency: 'RWF'
+                }
+            });
+        }
+        // Credit wallet
+        yield prisma_1.default.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { increment: walletCredit } }
+        });
+        // Create wallet transaction record
+        yield prisma_1.default.walletTransaction.create({
+            data: {
+                walletId: wallet.id,
+                type: 'credit',
+                amount: walletCredit,
+                description: `Redeemed ${unitsToRedeem.toFixed(2)} M³ gas rewards`,
+                status: 'completed'
+            }
+        });
+        // Deduct gas rewards (create negative reward entry)
+        yield prisma_1.default.gasReward.create({
+            data: {
+                consumerId: consumerProfile.id,
+                units: -unitsToRedeem,
+                source: 'redemption',
+                reference: `Redeemed for ${walletCredit} RWF wallet credit`
+            }
+        });
+        res.json({
+            success: true,
+            data: {
+                points_redeemed: points,
+                units_redeemed: unitsToRedeem,
+                wallet_credit: walletCredit,
+                new_balance: totalUnits - unitsToRedeem
+            },
+            message: `Successfully redeemed ${points} points for ${walletCredit.toLocaleString()} RWF wallet credit`
+        });
+    }
+    catch (error) {
+        console.error('Redeem gas rewards error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.redeemGasRewards = redeemGasRewards;

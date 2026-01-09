@@ -170,7 +170,7 @@ const getLeaderboard = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const rewards = yield prisma_1.default.gasReward.findMany({
             where: dateFilter ? { createdAt: { gte: dateFilter } } : {},
             include: {
-                consumer: {
+                consumerProfile: {
                     include: {
                         user: {
                             select: {
@@ -188,8 +188,8 @@ const getLeaderboard = (req, res) => __awaiter(void 0, void 0, void 0, function*
             if (!acc[consumerId]) {
                 acc[consumerId] = {
                     consumerId,
-                    name: reward.consumer.user.name || 'Anonymous',
-                    userId: reward.consumer.user.id,
+                    name: reward.consumerProfile.user.name || 'Anonymous',
+                    userId: reward.consumerProfile.user.id,
                     points: 0
                 };
             }

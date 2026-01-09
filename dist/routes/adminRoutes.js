@@ -19,11 +19,13 @@ router.get('/retailers', adminController_1.getRetailers);
 router.post('/retailers', adminController_1.createRetailer);
 router.put('/retailers/:id', adminController_1.updateRetailer);
 router.delete('/retailers/:id', adminController_1.deleteRetailer);
+router.post('/retailers/:id/verify', adminController_1.verifyRetailer);
 // Wholesaler Routes
 router.get('/wholesalers', adminController_1.getWholesalers);
 router.post('/wholesalers', adminController_1.createWholesaler);
 router.put('/wholesalers/:id', adminController_1.updateWholesaler);
 router.delete('/wholesalers/:id', adminController_1.deleteWholesaler);
+router.post('/wholesalers/:id/status', adminController_1.updateWholesalerStatus);
 router.get('/loans', adminController_1.getLoans);
 router.get('/nfc-cards', adminController_1.getNFCCards);
 // Product Routes

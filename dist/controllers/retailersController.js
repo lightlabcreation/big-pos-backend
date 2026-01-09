@@ -32,7 +32,7 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const orders = yield prisma_1.default.order.findMany({
             where: { wholesalerId: wholesalerProfile.id },
             include: {
-                retailer: {
+                retailerProfile: {
                     include: {
                         user: true,
                         credit: true
@@ -45,7 +45,7 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const retailersMap = new Map();
         for (const order of orders) {
             if (!retailersMap.has(order.retailerId)) {
-                retailersMap.set(order.retailerId, order.retailer);
+                retailersMap.set(order.retailerId, order.retailerProfile);
             }
         }
         const retailers = Array.from(retailersMap.values());
@@ -70,14 +70,14 @@ const getRetailerStats = (req, res) => __awaiter(void 0, void 0, void 0, functio
         // Get all orders to find unique retailers
         const orders = yield prisma_1.default.order.findMany({
             where: { wholesalerId: wholesalerProfile.id },
-            include: { retailer: true }
+            include: { retailerProfile: true }
         });
         const uniqueRetailers = new Set(orders.map(o => o.retailerId));
         const totalRetailers = uniqueRetailers.size;
         // Get credit data
         const creditData = yield prisma_1.default.retailerCredit.findMany({
             where: {
-                retailer: {
+                retailerProfile: {
                     orders: {
                         some: {
                             wholesalerId: wholesalerProfile.id
@@ -165,7 +165,7 @@ const getRetailerOrdersById = (req, res) => __awaiter(void 0, void 0, void 0, fu
             },
             include: {
                 _count: {
-                    select: { items: true }
+                    select: { orderItems: true }
                 }
             },
             orderBy: { createdAt: 'desc' },
@@ -181,7 +181,7 @@ const getRetailerOrdersById = (req, res) => __awaiter(void 0, void 0, void 0, fu
             paymentStatus: order.status === 'delivered' ? 'paid' : 'pending',
             createdAt: order.createdAt.toISOString(),
             _count: {
-                items: order._count.items
+                items: order._count.orderItems
             }
         }));
         console.log(`✅ Found ${transformedOrders.length} orders for retailer`);
@@ -248,7 +248,7 @@ const getSuppliers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const suppliers = yield prisma_1.default.supplier.findMany({
             include: {
                 products: true,
-                payments: true
+                supplierPayments: true
             },
             orderBy: { name: 'asc' }
         });
@@ -277,7 +277,7 @@ const getCreditRequestsWithStats = (req, res) => __awaiter(void 0, void 0, void 
         // Get credit requests from retailers who have ordered from this wholesaler
         const creditRequests = yield prisma_1.default.creditRequest.findMany({
             where: {
-                retailer: {
+                retailerProfile: {
                     orders: {
                         some: {
                             wholesalerId: wholesalerProfile.id
@@ -286,7 +286,7 @@ const getCreditRequestsWithStats = (req, res) => __awaiter(void 0, void 0, void 
                 }
             },
             include: {
-                retailer: {
+                retailerProfile: {
                     include: {
                         user: true,
                         credit: true
@@ -296,28 +296,28 @@ const getCreditRequestsWithStats = (req, res) => __awaiter(void 0, void 0, void 
             orderBy: { createdAt: 'desc' }
         });
         // Transform to match frontend expectations
-        const requests = creditRequests.map(req => {
+        const requests = creditRequests.map(creditReq => {
             var _a, _b, _c;
             return ({
-                id: req.id,
-                retailerId: req.retailerId,
-                retailerName: req.retailer.user.name || 'Unknown',
-                retailerShop: req.retailer.shopName,
-                retailerPhone: req.retailer.user.phone || '',
-                currentCredit: ((_a = req.retailer.credit) === null || _a === void 0 ? void 0 : _a.usedCredit) || 0,
-                creditLimit: ((_b = req.retailer.credit) === null || _b === void 0 ? void 0 : _b.creditLimit) || 0,
-                requestedAmount: req.amount,
-                reason: req.reason || '',
-                status: req.status,
-                createdAt: req.createdAt.toISOString(),
-                processedAt: (_c = req.reviewedAt) === null || _c === void 0 ? void 0 : _c.toISOString(),
-                rejectionReason: req.reviewNotes
+                id: creditReq.id,
+                retailerId: creditReq.retailerId,
+                retailerName: creditReq.retailerProfile.user.name || 'Unknown',
+                retailerShop: creditReq.retailerProfile.shopName,
+                retailerPhone: creditReq.retailerProfile.user.phone || '',
+                currentCredit: ((_a = creditReq.retailerProfile.credit) === null || _a === void 0 ? void 0 : _a.usedCredit) || 0,
+                creditLimit: ((_b = creditReq.retailerProfile.credit) === null || _b === void 0 ? void 0 : _b.creditLimit) || 0,
+                requestedAmount: creditReq.amount,
+                reason: creditReq.reason || '',
+                status: creditReq.status,
+                createdAt: creditReq.createdAt.toISOString(),
+                processedAt: (_c = creditReq.reviewedAt) === null || _c === void 0 ? void 0 : _c.toISOString(),
+                rejectionReason: creditReq.reviewNotes
             });
         });
         // Calculate credit stats
         const allCreditData = yield prisma_1.default.retailerCredit.findMany({
             where: {
-                retailer: {
+                retailerProfile: {
                     orders: {
                         some: {
                             wholesalerId: wholesalerProfile.id
@@ -357,18 +357,18 @@ const approveCreditRequest = (req, res) => __awaiter(void 0, void 0, void 0, fun
                 reviewedAt: new Date()
             },
             include: {
-                retailer: {
+                retailerProfile: {
                     include: { credit: true }
                 }
             }
         });
         // Update retailer credit limit
-        if (creditRequest.retailer.credit) {
+        if (creditRequest.retailerProfile.credit) {
             yield prisma_1.default.retailerCredit.update({
-                where: { id: creditRequest.retailer.credit.id },
+                where: { id: creditRequest.retailerProfile.credit.id },
                 data: {
-                    creditLimit: creditRequest.retailer.credit.creditLimit + creditRequest.amount,
-                    availableCredit: creditRequest.retailer.credit.availableCredit + creditRequest.amount
+                    creditLimit: creditRequest.retailerProfile.credit.creditLimit + creditRequest.amount,
+                    availableCredit: creditRequest.retailerProfile.credit.availableCredit + creditRequest.amount
                 }
             });
         }

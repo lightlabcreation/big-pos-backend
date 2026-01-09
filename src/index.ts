@@ -10,6 +10,7 @@ import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
 import debugRoutes from './routes/debugRoutes';
+import trainingRoutes from './routes/trainingRoutes';
 
 dotenv.config();
 
@@ -38,10 +39,12 @@ app.use('/admin/auth', authRoutes);
 app.use('/employee/auth', authRoutes);
 
 app.use('/employee', employeeRoutes);
+app.use('/employee', trainingRoutes);
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
 app.use('/wholesaler', wholesalerRoutes);
 app.use('/admin', adminRoutes);
+app.use('/nfc', nfcRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/debug', debugRoutes); // Public debug endpoint
 

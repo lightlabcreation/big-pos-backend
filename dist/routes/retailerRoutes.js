@@ -10,6 +10,7 @@ router.get('/inventory', retailerController_1.getInventory);
 router.post('/inventory', retailerController_1.createProduct);
 router.put('/inventory/:id', retailerController_1.updateProduct);
 router.get('/orders', retailerController_1.getOrders);
+router.get('/orders/:id', retailerController_1.getOrder);
 router.post('/orders', retailerController_1.createOrder); // Add this line
 router.get('/branches', retailerController_1.getBranches);
 router.post('/branches', retailerController_1.createBranch);

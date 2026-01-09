@@ -1,24 +1,32 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/authMiddleware';
-import prisma from '../utils/prisma';
-
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getCardOrders = exports.updateCardNickname = exports.setPrimaryCard = exports.setCardPin = exports.unlinkCard = exports.linkCard = exports.getMyCards = void 0;
+const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get customer's NFC cards
-export const getMyCards = async (req: AuthRequest, res: Response) => {
+const getMyCards = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userId = req.user!.id;
-
-        const consumerProfile = await prisma.consumerProfile.findUnique({
+        const userId = req.user.id;
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
             where: { userId }
         });
-
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-
-        const cards = await prisma.nfcCard.findMany({
+        const cards = yield prisma_1.default.nfcCard.findMany({
             where: { consumerId: consumerProfile.id }
         });
-
         // Transform to frontend expected format
         const formattedCards = cards.map((card, index) => ({
             id: card.id,
@@ -30,49 +38,43 @@ export const getMyCards = async (req: AuthRequest, res: Response) => {
             last_used: card.createdAt, // Placeholder
             nickname: `Card ${index + 1}` // Placeholder
         }));
-
         res.json({
             success: true,
             data: formattedCards
         });
-    } catch (error: any) {
+    }
+    catch (error) {
         console.error('Get NFC cards error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
-};
-
+});
+exports.getMyCards = getMyCards;
 // Link a new NFC card
-export const linkCard = async (req: AuthRequest, res: Response) => {
+const linkCard = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userId = req.user!.id;
+        const userId = req.user.id;
         const { uid, pin, nickname } = req.body;
-
         if (!uid || !pin) {
             return res.status(400).json({ success: false, error: 'UID and PIN are required' });
         }
-
-        const consumerProfile = await prisma.consumerProfile.findUnique({
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
             where: { userId }
         });
-
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-
         // Check if card is already linked or exists
-        const existingCard = await prisma.nfcCard.findUnique({
+        const existingCard = yield prisma_1.default.nfcCard.findUnique({
             where: { uid }
         });
-
         if (existingCard) {
             if (existingCard.consumerId) {
                 return res.status(400).json({ success: false, error: 'Card is already linked to a user' });
             }
-
             // If card exists but not linked (e.g. created by admin), link it
             // Verify PIN if needed (assuming new cards might have a PIN set by admin)
             // For now, simpler: just update it
-            await prisma.nfcCard.update({
+            yield prisma_1.default.nfcCard.update({
                 where: { id: existingCard.id },
                 data: {
                     consumerId: consumerProfile.id,
@@ -85,11 +87,10 @@ export const linkCard = async (req: AuthRequest, res: Response) => {
                 message: 'Card linked successfully'
             });
         }
-
         // If card doesn't exist, create it (assuming self-registration flow allowed for demo)
         // In real world, physical cards should pre-exist.
         // We will create it to support the demo flow.
-        const newCard = await prisma.nfcCard.create({
+        const newCard = yield prisma_1.default.nfcCard.create({
             data: {
                 uid,
                 pin,
@@ -97,156 +98,139 @@ export const linkCard = async (req: AuthRequest, res: Response) => {
                 status: 'active'
             }
         });
-
         res.json({
             success: true,
             data: newCard,
             message: 'Card linked successfully'
         });
-
-    } catch (error: any) {
+    }
+    catch (error) {
         console.error('Link NFC card error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
-};
-
+});
+exports.linkCard = linkCard;
 // Unlink NFC card
-export const unlinkCard = async (req: AuthRequest, res: Response) => {
+const unlinkCard = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userId = req.user!.id;
+        const userId = req.user.id;
         const { id } = req.params;
-
-        const consumerProfile = await prisma.consumerProfile.findUnique({
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
             where: { userId }
         });
-
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-
-        const card = await prisma.nfcCard.findUnique({
+        const card = yield prisma_1.default.nfcCard.findUnique({
             where: { id }
         });
-
         if (!card || card.consumerId !== consumerProfile.id) {
             return res.status(404).json({ success: false, error: 'Card not found or not owned by you' });
         }
-
         // Unlink by removing consumerId
-        await prisma.nfcCard.update({
+        yield prisma_1.default.nfcCard.update({
             where: { id },
             data: {
                 consumerId: null,
                 status: 'inactive'
             }
         });
-
         res.json({
             success: true,
             message: 'Card unlinked successfully'
         });
-
-    } catch (error: any) {
+    }
+    catch (error) {
         console.error('Unlink NFC card error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
-};
-
+});
+exports.unlinkCard = unlinkCard;
 // Update PIN
-export const setCardPin = async (req: AuthRequest, res: Response) => {
+const setCardPin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userId = req.user!.id;
+        const userId = req.user.id;
         const { id } = req.params;
         const { old_pin, new_pin } = req.body;
-
-        const consumerProfile = await prisma.consumerProfile.findUnique({
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
             where: { userId }
         });
-
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-
-        const card = await prisma.nfcCard.findUnique({
+        const card = yield prisma_1.default.nfcCard.findUnique({
             where: { id }
         });
-
         if (!card || card.consumerId !== consumerProfile.id) {
             return res.status(404).json({ success: false, error: 'Card not found' });
         }
-
         if (card.pin && card.pin !== old_pin) {
             return res.status(400).json({ success: false, error: 'Invalid old PIN' });
         }
-
-        await prisma.nfcCard.update({
+        yield prisma_1.default.nfcCard.update({
             where: { id },
             data: { pin: new_pin }
         });
-
         res.json({
             success: true,
             message: 'PIN updated successfully'
         });
-
-    } catch (error: any) {
+    }
+    catch (error) {
         console.error('Set card PIN error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
-};
-
+});
+exports.setCardPin = setCardPin;
 // Set Primary Card
-export const setPrimaryCard = async (req: AuthRequest, res: Response) => {
+const setPrimaryCard = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // Placeholder implementation as DB doesn't have isPrimary field
         res.json({
             success: true,
             message: 'Card set as primary'
         });
-    } catch (error: any) {
+    }
+    catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
-};
-
+});
+exports.setPrimaryCard = setPrimaryCard;
 // Update Nickname
-export const updateCardNickname = async (req: AuthRequest, res: Response) => {
+const updateCardNickname = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // Placeholder
         res.json({
             success: true,
             message: 'Nickname updated'
         });
-    } catch (error: any) {
+    }
+    catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
-};
-
+});
+exports.updateCardNickname = updateCardNickname;
 // Get order history for a specific NFC card
-export const getCardOrders = async (req: AuthRequest, res: Response) => {
+const getCardOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const userId = req.user!.id;
+        const userId = req.user.id;
         const { cardId } = req.params;
-
-        const consumerProfile = await prisma.consumerProfile.findUnique({
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
             where: { userId }
         });
-
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-
         // Verify card ownership
-        const card = await prisma.nfcCard.findUnique({
+        const card = yield prisma_1.default.nfcCard.findUnique({
             where: { id: cardId }
         });
-
         if (!card || card.consumerId !== consumerProfile.id) {
             return res.status(404).json({ success: false, error: 'Card not found or not owned by you' });
         }
-
         // Fetch sales made by this consumer (orders are stored as Sale model)
         // Since we don't have a direct card-to-sale link, we fetch all consumer sales
-        const sales = await prisma.sale.findMany({
+        const sales = yield prisma_1.default.sale.findMany({
             where: {
                 consumerId: consumerProfile.id
             },
@@ -266,25 +250,28 @@ export const getCardOrders = async (req: AuthRequest, res: Response) => {
             orderBy: { createdAt: 'desc' },
             take: 50
         });
-
         // Format orders for frontend
-        const formattedOrders = sales.map(sale => ({
-            id: sale.id,
-            order_number: `ORD-${sale.id.slice(-8).toUpperCase()}`,
-            shop_name: sale.retailerProfile?.shopName || 'Unknown Shop',
-            shop_location: sale.retailerProfile?.address || 'Unknown Location',
-            amount: sale.totalAmount,
-            items_count: sale.saleItems?.length || 0,
-            date: sale.createdAt,
-            status: sale.status
-        }));
-
+        const formattedOrders = sales.map(sale => {
+            var _a, _b, _c;
+            return ({
+                id: sale.id,
+                order_number: `ORD-${sale.id.slice(-8).toUpperCase()}`,
+                shop_name: ((_a = sale.retailerProfile) === null || _a === void 0 ? void 0 : _a.shopName) || 'Unknown Shop',
+                shop_location: ((_b = sale.retailerProfile) === null || _b === void 0 ? void 0 : _b.address) || 'Unknown Location',
+                amount: sale.totalAmount,
+                items_count: ((_c = sale.saleItems) === null || _c === void 0 ? void 0 : _c.length) || 0,
+                date: sale.createdAt,
+                status: sale.status
+            });
+        });
         res.json({
             success: true,
             data: formattedOrders
         });
-    } catch (error: any) {
+    }
+    catch (error) {
         console.error('Get card orders error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
-};
+});
+exports.getCardOrders = getCardOrders;

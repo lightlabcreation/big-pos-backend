@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteEmployee = exports.updateEmployee = exports.createEmployee = exports.getEmployees = exports.getProducts = exports.deleteCustomer = exports.updateCustomer = exports.createCustomer = exports.deleteWholesaler = exports.updateWholesaler = exports.deleteRetailer = exports.updateRetailer = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getCategories = exports.getNFCCards = exports.getLoans = exports.createWholesaler = exports.getWholesalers = exports.createRetailer = exports.getRetailers = exports.getCustomers = exports.getDashboard = void 0;
+exports.deleteEmployee = exports.updateEmployee = exports.createEmployee = exports.getEmployees = exports.getProducts = exports.deleteCustomer = exports.updateCustomer = exports.createCustomer = exports.updateWholesalerStatus = exports.deleteWholesaler = exports.updateWholesaler = exports.verifyRetailer = exports.deleteRetailer = exports.updateRetailer = exports.deleteCategory = exports.updateCategory = exports.createCategory = exports.getCategories = exports.getNFCCards = exports.getLoans = exports.createWholesaler = exports.getWholesalers = exports.createRetailer = exports.getRetailers = exports.getCustomers = exports.getDashboard = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const auth_1 = require("../utils/auth");
 // Get dashboard
@@ -314,6 +314,26 @@ const deleteRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 });
 exports.deleteRetailer = deleteRetailer;
+const verifyRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        // Check if retailer exists
+        const retailer = yield prisma_1.default.retailerProfile.findUnique({ where: { id } });
+        if (!retailer)
+            return res.status(404).json({ error: 'Retailer not found' });
+        // Update isVerified status
+        yield prisma_1.default.retailerProfile.update({
+            where: { id },
+            data: { isVerified: true }
+        });
+        res.json({ success: true, message: 'Retailer verified successfully' });
+    }
+    catch (error) {
+        console.error('Verify Retailer Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.verifyRetailer = verifyRetailer;
 // ==========================================
 // WHOLESALER MANAGEMENT (Extra CRUD)
 // ==========================================
@@ -381,6 +401,36 @@ const deleteWholesaler = (req, res) => __awaiter(void 0, void 0, void 0, functio
     }
 });
 exports.deleteWholesaler = deleteWholesaler;
+const updateWholesalerStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const { isActive, status } = req.body;
+        const wholesaler = yield prisma_1.default.wholesalerProfile.findUnique({ where: { id } });
+        if (!wholesaler)
+            return res.status(404).json({ error: 'Wholesaler not found' });
+        // Determine new status (support both formats for backward compatibility/safety)
+        let newStatus = false;
+        if (typeof isActive === 'boolean') {
+            newStatus = isActive;
+        }
+        else if (status === 'active') {
+            newStatus = true;
+        }
+        // Update User status (since login depends on User.isActive)
+        yield prisma_1.default.user.update({
+            where: { id: wholesaler.userId },
+            data: {
+                isActive: newStatus
+            }
+        });
+        res.json({ success: true, message: `Wholesaler status updated to ${newStatus ? 'active' : 'inactive'}` });
+    }
+    catch (error) {
+        console.error('Update Wholesaler Status Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.updateWholesalerStatus = updateWholesalerStatus;
 // ==========================================
 // CUSTOMER MANAGEMENT (Extra CRUD)
 // ==========================================

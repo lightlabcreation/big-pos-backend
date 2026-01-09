@@ -219,6 +219,13 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 reference: order.id
             }
         });
+        // Generate gas meter token (16 digits formatted as XXXX-XXXX-XXXX-XXXX)
+        const generateToken = () => {
+            var _a;
+            const digits = Math.random().toString().slice(2, 18).padEnd(16, '0');
+            return ((_a = digits.match(/.{1,4}/g)) === null || _a === void 0 ? void 0 : _a.join('-')) || '0000-0000-0000-0000';
+        };
+        const token = generateToken();
         res.json({
             success: true,
             data: {
@@ -227,6 +234,7 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 meter_number,
                 amount,
                 units,
+                token,
                 reward_units: rewardUnits,
                 new_wallet_balance: wallet.balance - amount
             },

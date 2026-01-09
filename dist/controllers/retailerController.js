@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAnalytics = exports.topUpWallet = exports.updateProfile = exports.getProfile = exports.makeRepayment = exports.requestCredit = exports.getCreditOrder = exports.getCreditOrders = exports.getCreditInfo = exports.getWalletTransactions = exports.createOrder = exports.getWholesalerProducts = exports.getDailySales = exports.createSale = exports.scanBarcode = exports.getPOSProducts = exports.getWallet = exports.createBranch = exports.getBranches = exports.getOrders = exports.updateProduct = exports.createProduct = exports.getInventory = exports.getDashboardStats = void 0;
+exports.getAnalytics = exports.topUpWallet = exports.updateProfile = exports.getProfile = exports.makeRepayment = exports.requestCredit = exports.getCreditOrder = exports.getCreditOrders = exports.getCreditInfo = exports.getWalletTransactions = exports.createOrder = exports.getWholesalerProducts = exports.getDailySales = exports.createSale = exports.scanBarcode = exports.getPOSProducts = exports.getWallet = exports.createBranch = exports.getBranches = exports.getOrder = exports.getOrders = exports.updateProduct = exports.createProduct = exports.getInventory = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get dashboard stats
 // Get dashboard stats with comprehensive calculations
@@ -43,7 +43,7 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
                     retailerId: retailerProfile.id,
                     createdAt: { gte: today, lt: tomorrow }
                 },
-                include: { saleItem: true }
+                include: { saleItems: true }
             }),
             // All Sales (for revenue stats)
             prisma_1.default.sale.findMany({
@@ -214,7 +214,7 @@ const getInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // 2. Get Global Catalog (Wholesaler products)
         const catalogProducts = yield prisma_1.default.product.findMany({
             where: { wholesalerId: { not: null } },
-            include: { wholesaler: true },
+            include: { wholesalerProfile: true },
             orderBy: { name: 'asc' }
         });
         // 3. Merge: If retailer has the product, use theirs. If not, show catalog item (stock 0)
@@ -258,12 +258,8 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             let order = yield prisma_1.default.order.findUnique({
                 where: { id: invoice_number },
                 include: {
-                    orders: {
-                        include: {
-                            orderItems: {
-                                include: { product: true }
-                            }
-                        }
+                    orderItems: {
+                        include: { product: true }
                     }
                 }
             });
@@ -271,7 +267,7 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             if (!order) {
                 const profitInvoice = yield prisma_1.default.profitInvoice.findUnique({
                     where: { invoiceNumber: invoice_number },
-                    include: { order: { include: { items: { include: { product: true } } } } }
+                    include: { order: { include: { orderItems: { include: { product: true } } } } }
                 });
                 if (profitInvoice) {
                     order = profitInvoice.order;
@@ -294,7 +290,7 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 return res.status(400).json({ error: 'Invoice already imported' });
             }
             const createdProducts = [];
-            for (const item of order.items) {
+            for (const item of order.orderItems) {
                 const sourceProduct = item.product;
                 // Create new inventory item
                 const newProduct = yield prisma_1.default.product.create({
@@ -406,15 +402,7 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
                 customer_phone: ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.phone) || 'N/A',
                 customer_email: (_e = (_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.email,
-                items: sale.saleItems.map(item => ({
-                    id: item.id,
-                    product_id: item.productId,
-                    product_name: item.product.name,
-                    sku: item.product.sku,
-                    quantity: item.quantity,
-                    unit_price: item.price,
-                    total: item.price * item.quantity
-                })),
+                items: [], // saleItems not included in query, would need separate fetch
                 subtotal: sale.totalAmount, // Simplified
                 discount: 0,
                 total: sale.totalAmount,
@@ -435,6 +423,64 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.getOrders = getOrders;
+// Get single order
+const getOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e;
+    try {
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const { id } = req.params;
+        const sale = yield prisma_1.default.sale.findFirst({
+            where: {
+                id,
+                retailerId: retailerProfile.id
+            },
+            include: {
+                consumerProfile: { include: { user: true } },
+                saleItems: { include: { product: true } }
+            }
+        });
+        if (!sale) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        const formattedOrder = {
+            id: sale.id,
+            display_id: sale.id.substring(0, 8).toUpperCase(),
+            customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
+            customer_phone: ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.phone) || 'N/A',
+            customer_email: (_e = (_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.email,
+            items: sale.saleItems.map(item => ({
+                id: item.id,
+                product_id: item.productId,
+                product_name: item.product.name,
+                sku: item.product.sku,
+                quantity: item.quantity,
+                unit_price: item.price,
+                total: item.price * item.quantity
+            })),
+            subtotal: sale.totalAmount, // Simplified
+            discount: 0,
+            total: sale.totalAmount,
+            status: sale.status,
+            payment_method: sale.paymentMethod,
+            payment_status: 'paid',
+            notes: '',
+            created_at: sale.createdAt.toISOString(),
+            updated_at: sale.updatedAt.toISOString(),
+            completed_at: sale.status === 'completed' ? sale.updatedAt.toISOString() : undefined
+        };
+        res.json({ order: formattedOrder });
+    }
+    catch (error) {
+        console.error('Get order error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getOrder = getOrder;
 // Get branches
 const getBranches = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -692,7 +738,7 @@ const getWholesalerProducts = (req, res) => __awaiter(void 0, void 0, void 0, fu
         }
         const products = yield prisma_1.default.product.findMany({
             where,
-            include: { wholesaler: true }, // Include wholesaler info
+            include: { wholesalerProfile: true }, // Include wholesaler info
             take: parseInt(limit),
             skip: parseInt(offset),
             orderBy: { name: 'asc' }
@@ -708,7 +754,7 @@ const getWholesalerProducts = (req, res) => __awaiter(void 0, void 0, void 0, fu
                 stock_available: p.stock,
                 min_order: 1, // Default min order
                 unit: p.unit || 'unit',
-                wholesaler_name: (_a = p.wholesaler) === null || _a === void 0 ? void 0 : _a.companyName
+                wholesaler_name: (_a = p.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName
             });
         });
         res.json({ products: formattedProducts });
@@ -880,7 +926,7 @@ const getCreditOrders = (req, res) => __awaiter(void 0, void 0, void 0, function
         }
         const orders = yield prisma_1.default.order.findMany({
             where,
-            include: { wholesaler: true },
+            include: { wholesalerProfile: true },
             orderBy: { createdAt: 'desc' },
             take: parseInt(limit),
             skip: parseInt(offset)
@@ -892,7 +938,7 @@ const getCreditOrders = (req, res) => __awaiter(void 0, void 0, void 0, function
             return ({
                 id: o.id,
                 display_id: o.id.substring(0, 8).toUpperCase(),
-                wholesaler_name: (_a = o.wholesaler) === null || _a === void 0 ? void 0 : _a.companyName,
+                wholesaler_name: (_a = o.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName,
                 total_amount: o.totalAmount,
                 amount_paid: 0, // In future, check related payments
                 amount_pending: o.totalAmount, // Simplified for now
@@ -915,21 +961,21 @@ const getCreditOrder = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const { id } = req.params;
         const order = yield prisma_1.default.order.findUnique({
             where: { id },
-            include: { wholesaler: true, items: { include: { product: true } } }
+            include: { wholesalerProfile: true, orderItems: { include: { product: true } } }
         });
         if (!order)
             return res.status(404).json({ error: 'Order not found' });
         res.json({
             id: order.id,
             display_id: order.id.substring(0, 8).toUpperCase(),
-            wholesaler_name: (_a = order.wholesaler) === null || _a === void 0 ? void 0 : _a.companyName,
+            wholesaler_name: (_a = order.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName,
             total_amount: order.totalAmount,
             amount_paid: 0,
             amount_pending: order.totalAmount,
             status: order.status,
             due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
             created_at: order.createdAt,
-            items: order.items.map(i => ({
+            items: order.orderItems.map(i => ({
                 id: i.id,
                 product_name: i.product.name,
                 quantity: i.quantity,
@@ -1178,8 +1224,8 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 createdAt: { gte: startDate }
             },
             include: {
-                items: { include: { product: true } },
-                consumer: true
+                saleItems: { include: { product: true } },
+                consumerProfile: true
             }
         });
         // 3. Revenue Metrics
@@ -1205,7 +1251,7 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // 5. Sales by Category
         const categoryMap = new Map();
         salesInPeriod.forEach(sale => {
-            sale.items.forEach(item => {
+            sale.saleItems.forEach(item => {
                 const cat = item.product.category || 'Other';
                 const current = categoryMap.get(cat) || { count: 0, revenue: 0 };
                 categoryMap.set(cat, {
@@ -1222,7 +1268,7 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // 6. Top Selling Products
         const productStats = new Map();
         salesInPeriod.forEach(sale => {
-            sale.items.forEach(item => {
+            sale.saleItems.forEach(item => {
                 const pid = item.productId;
                 const current = productStats.get(pid) || { name: item.product.name, quantity: 0, revenue: 0 };
                 productStats.set(pid, {
@@ -1238,11 +1284,11 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // 7. Top Customers
         const customerStats = new Map();
         salesInPeriod.forEach(sale => {
-            if (sale.consumer) {
+            if (sale.consumerProfile) {
                 const cid = sale.consumerId;
-                const current = customerStats.get(cid) || { name: sale.consumer.fullName || 'Unknown', orders: 0, spent: 0 };
+                const current = customerStats.get(cid) || { name: sale.consumerProfile.fullName || 'Unknown', orders: 0, spent: 0 };
                 customerStats.set(cid, {
-                    name: sale.consumer.fullName || 'Unknown',
+                    name: sale.consumerProfile.fullName || 'Unknown',
                     orders: current.orders + 1,
                     spent: current.spent + sale.totalAmount
                 });

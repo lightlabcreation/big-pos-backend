@@ -24,7 +24,7 @@ const getJobs = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             orderBy: { postedDate: 'desc' },
             include: {
                 _count: {
-                    select: { applications: true }
+                    select: { jobApplications: true }
                 }
             }
         });
@@ -107,7 +107,7 @@ const getApplications = (req, res) => __awaiter(void 0, void 0, void 0, function
             where,
             orderBy: { appliedDate: 'desc' },
             include: {
-                job: {
+                jobPosting: {
                     select: { title: true }
                 }
             }
