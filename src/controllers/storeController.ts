@@ -2,6 +2,90 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
 
+// Create a new retail order
+export const createOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { retailerId, items, paymentMethod, total } = req.body;
+    const userId = req.user!.id;
+
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!consumerProfile) {
+      return res.status(404).json({ error: 'Consumer profile not found' });
+    }
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'Order must contain items' });
+    }
+
+    const result = await prisma.$transaction(async (prisma) => {
+      // 1. Process Payment (Wallet deduction)
+      if (paymentMethod === 'wallet') {
+        const wallet = await prisma.wallet.findFirst({
+          where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+        });
+
+        if (!wallet || wallet.balance < total) {
+          throw new Error('Insufficient wallet balance');
+        }
+
+        await prisma.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { decrement: total } }
+        });
+
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: 'purchase',
+            amount: -total,
+            description: `Payment to Retailer`,
+            status: 'completed'
+          }
+        });
+      }
+
+      // 2. Create Sale Record
+      const sale = await prisma.sale.create({
+        data: {
+          consumerId: consumerProfile.id,
+          retailerId: retailerId,
+          totalAmount: total,
+          status: 'pending',
+          paymentMethod: paymentMethod,
+          items: {
+            create: items.map((item: any) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              price: item.price
+            }))
+          }
+        },
+        include: { items: true }
+      });
+
+      // 3. Update Product Stock (Optional based on business logic, assuming simple stock handling)
+      /* 
+      // If we were tracking inventory strictly, we would decrement here.
+      for (const item of items) {
+         await prisma.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } }
+         });
+      }
+      */
+
+      return sale;
+    });
+
+    res.json({ success: true, order: result, message: 'Order created successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // Get retailers
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
@@ -30,7 +114,7 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
     const { retailerId, category, search } = req.query;
     const where: any = {};
-    
+
     if (retailerId) where.retailerId = retailerId as string;
     if (category) where.category = category as string;
     if (search) where.name = { contains: search as string };
@@ -43,6 +127,7 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
 };
 
 // Get customer orders
+// Get normalized customer orders (merging Sales and CustomerOrders)
 export const getMyOrders = async (req: AuthRequest, res: Response) => {
   try {
     const consumerProfile = await prisma.consumerProfile.findUnique({
@@ -53,16 +138,187 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Consumer profile not found' });
     }
 
-    const orders = await prisma.sale.findMany({
+    // 1. Fetch Sales (Retail Orders)
+    const sales = await prisma.sale.findMany({
       where: { consumerId: consumerProfile.id },
-      include: { items: { include: { product: true } }, retailer: true }
+      include: {
+        items: {
+          include: { product: true }
+        },
+        retailer: {
+          select: {
+            id: true,
+            shopName: true,
+            address: true,
+            user: { select: { phone: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ orders });
+    // 2. Fetch CustomerOrders (Gas/Other)
+    const otherOrders = await prisma.customerOrder.findMany({
+      where: { consumerId: consumerProfile.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // 3. Normalize Sales to Order Interface
+    const normalizedSales = sales.map(sale => ({
+      id: sale.id,
+      order_number: `ORD-${sale.createdAt.getFullYear()}-${sale.id.substring(0, 4).toUpperCase()}`, // Generate if missing
+      status: sale.status,
+      retailer: {
+        id: sale.retailerId,
+        name: sale.retailer.shopName,
+        location: sale.retailer.address || 'Unknown Location',
+        phone: sale.retailer.user?.phone || 'N/A'
+      },
+      items: sale.items.map(item => ({
+        id: item.id,
+        product_id: item.productId,
+        product_name: item.product.name,
+        quantity: item.quantity,
+        unit_price: item.price,
+        total: item.price * item.quantity
+      })),
+      subtotal: sale.totalAmount, // Assuming no extra fees for now
+      delivery_fee: 0,
+      total: sale.totalAmount,
+      delivery_address: consumerProfile.address || 'Pickup',
+      created_at: sale.createdAt.toISOString(),
+      updated_at: sale.updatedAt.toISOString(),
+      payment_method: sale.paymentMethod,
+      // Optional fields defaulting to null/undefined
+      packager: undefined,
+      shipper: undefined,
+      meter_id: undefined
+    }));
+
+    // 4. Normalize CustomerOrders (Gas/Service)
+    const normalizedOthers = otherOrders.map(order => {
+      let items = [];
+      let meterId = undefined;
+      try {
+        items = JSON.parse(order.items as string || '[]');
+        // For gas, items might be different, let's try to map generic items
+        // If gas order, items structure is [{meterNumber, units, amount}]
+        if (order.orderType === 'gas') {
+          // Try to extract meter info if available in metadata or items
+          // This is a simplification based on typical gas order structure
+        }
+      } catch (e) { }
+
+      const metadata: any = order.metadata ? JSON.parse(order.metadata as string) : {};
+
+      return {
+        id: order.id,
+        order_number: `ORD-${order.createdAt.getFullYear()}-${order.id.substring(0, 4).toUpperCase()}`,
+        status: order.status,
+        retailer: {
+          id: 'GAS_SERVICE',
+          name: 'Big Gas Service',
+          location: 'Main Depot',
+          phone: '+250 788 000 000'
+        },
+        items: items.map((i: any, idx: number) => ({
+          id: `${order.id}-${idx}`,
+          product_id: 'gas',
+          product_name: order.orderType === 'gas' ? `Gas Token (${i.units} units)` : 'Service Item',
+          quantity: 1,
+          unit_price: i.amount,
+          total: i.amount
+        })),
+        subtotal: order.amount,
+        delivery_fee: 0,
+        total: order.amount,
+        delivery_address: 'Digital Delivery',
+        created_at: order.createdAt.toISOString(),
+        updated_at: order.updatedAt.toISOString(),
+        payment_method: metadata.paymentMethod || 'Wallet',
+        meter_id: items[0]?.meterNumber // Attempt to grab meter number
+      };
+    });
+
+    // Merge and sort
+    const allOrders = [...normalizedSales, ...normalizedOthers].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    res.json({ orders: allOrders });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const cancelOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const userId = req.user!.id;
+
+    const consumerProfile = await prisma.consumerProfile.findUnique({ where: { userId } });
+    if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    // Check Sales
+    const sale = await prisma.sale.findUnique({ where: { id } });
+    if (sale) {
+      if (sale.consumerId !== consumerProfile.id) return res.status(403).json({ error: 'Unauthorized' });
+      if (!['pending', 'confirmed'].includes(sale.status)) {
+        return res.status(400).json({ error: 'Order cannot be cancelled in current state' });
+      }
+
+      await prisma.sale.update({
+        where: { id },
+        data: { status: 'cancelled' } // In real world, would add reason to a notes field
+      });
+      return res.json({ success: true, message: 'Order cancelled' });
+    }
+
+    // Check CustomerOrders
+    const order = await prisma.customerOrder.findUnique({ where: { id } });
+    if (order) {
+      if (order.consumerId !== consumerProfile.id) return res.status(403).json({ error: 'Unauthorized' });
+      if (!['pending', 'active'].includes(order.status)) {
+        return res.status(400).json({ error: 'Order cannot be cancelled' });
+      }
+      await prisma.customerOrder.update({
+        where: { id },
+        data: { status: 'cancelled' }
+      });
+      return res.json({ success: true, message: 'Order cancelled' });
+    }
+
+    res.status(404).json({ error: 'Order not found' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+export const confirmDelivery = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    const consumerProfile = await prisma.consumerProfile.findUnique({ where: { userId } });
+    if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    // Only Sales typically have delivery
+    const sale = await prisma.sale.findUnique({ where: { id } });
+    if (!sale) return res.status(404).json({ error: 'Order not found' });
+
+    if (sale.consumerId !== consumerProfile.id) return res.status(403).json({ error: 'Unauthorized' });
+
+    await prisma.sale.update({
+      where: { id },
+      data: { status: 'delivered' }
+    });
+
+    res.json({ success: true, message: 'Delivery confirmed' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+}
 
 // Get wallet balance
 export const getWalletBalance = async (req: AuthRequest, res: Response) => {
@@ -145,8 +401,340 @@ export const getLoanProducts = async (req: AuthRequest, res: Response) => {
 // Check loan eligibility
 export const checkLoanEligibility = async (req: AuthRequest, res: Response) => {
   try {
-    res.json({ eligible: true, credit_score: 65, max_eligible_amount: 15000 });
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!consumerProfile) {
+      return res.status(404).json({ error: 'Consumer profile not found' });
+    }
+
+    // Simple eligibility logic: verified users with some orders get better eligibility
+    const eligible = consumerProfile.isVerified;
+    const creditScore = eligible ? 80 : 50;
+    const maxAmount = eligible ? 50000 : 5000;
+
+    res.json({ eligible, credit_score: creditScore, max_eligible_amount: maxAmount });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+};
+
+// Apply for loan
+export const applyForLoan = async (req: AuthRequest, res: Response) => {
+  try {
+    const { loan_product_id, amount, purpose } = req.body;
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!consumerProfile) {
+      return res.status(404).json({ error: 'Consumer profile not found' });
+    }
+
+    if (amount > 50000) {
+      return res.status(400).json({ error: 'Amount exceeds maximum limit' });
+    }
+
+    const result = await prisma.$transaction(async (prisma) => {
+      // 1. Create loan record (Auto-approved for demo)
+      const loan = await prisma.loan.create({
+        data: {
+          consumerId: consumerProfile.id,
+          amount,
+          status: 'approved',
+          dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        }
+      });
+
+      // 2. Get or Create Credit Wallet
+      let creditWallet = await prisma.wallet.findFirst({
+        where: { consumerId: consumerProfile.id, type: 'credit_wallet' }
+      });
+
+      if (!creditWallet) {
+        creditWallet = await prisma.wallet.create({
+          data: {
+            consumerId: consumerProfile.id,
+            type: 'credit_wallet',
+            balance: 0,
+            currency: 'RWF'
+          }
+        });
+      }
+
+      // 3. Add to Credit Wallet Balance (Limit)
+      await prisma.wallet.update({
+        where: { id: creditWallet.id },
+        data: { balance: { increment: amount } }
+      });
+
+      // 4. Create Transaction
+      await prisma.walletTransaction.create({
+        data: {
+          walletId: creditWallet.id,
+          type: 'loan_disbursement',
+          amount: amount,
+          description: `Loan Approved (${purpose || 'Cash Loan'})`,
+          status: 'completed',
+          reference: loan.id
+        }
+      });
+
+      return loan;
+    });
+
+    res.json({ success: true, loan: result, message: 'Loan approved and credited successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Repay loan
+export const repayLoan = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { amount, payment_method } = req.body;
+
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    await prisma.$transaction(async (prisma) => {
+      const loan = await prisma.loan.findUnique({ where: { id } });
+      if (!loan) throw new Error('Loan not found');
+
+      // 1. Handle Wallet Payment
+      if (payment_method === 'wallet') {
+        const dashboardWallet = await prisma.wallet.findFirst({
+          where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+        });
+
+        if (!dashboardWallet || dashboardWallet.balance < amount) {
+          throw new Error('Insufficient dashboard wallet balance');
+        }
+
+        // Deduct from Dashboard
+        await prisma.wallet.update({
+          where: { id: dashboardWallet.id },
+          data: { balance: { decrement: amount } }
+        });
+
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: dashboardWallet.id,
+            type: 'debit',
+            amount: -amount,
+            description: `Loan Repayment`,
+            status: 'completed',
+            reference: loan.id
+          }
+        });
+      }
+
+      // 3. Add amount back to 'credit_wallet' (replenish limit)
+      const creditWallet = await prisma.wallet.findFirst({
+        where: { consumerId: consumerProfile.id, type: 'credit_wallet' }
+      });
+
+      if (creditWallet) { // Only replenish if credit wallet exists
+        await prisma.wallet.update({
+          where: { id: creditWallet.id },
+          data: { balance: { increment: amount } }
+        });
+
+        // 4. Add repayment transaction to credit wallet
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: creditWallet.id,
+            type: 'loan_repayment_replenish',
+            amount: amount,
+            description: `Loan Repayment Replenishment for Loan ID: ${loan.id}`,
+            status: 'completed',
+            reference: loan.id
+          }
+        });
+      }
+
+      // 5. Check if fully paid
+      const allRepayments = await prisma.walletTransaction.findMany({
+        where: { reference: loan.id, type: 'loan_repayment_replenish' }
+      });
+      const totalPaid = allRepayments.reduce((sum, t) => sum + t.amount, 0) + amount; // existing + current
+
+      if (totalPaid >= loan.amount) {
+        await prisma.loan.update({
+          where: { id },
+          data: { status: 'repaid' }
+        });
+      }
+    });
+
+    res.json({ success: true, message: 'Loan repayment successful' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getActiveLoanLedger = async (req: AuthRequest, res: Response) => {
+  try {
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    // Find active loan (status approved or active)
+    const loan = await prisma.loan.findFirst({
+      where: {
+        consumerId: consumerProfile.id,
+        status: { in: ['approved', 'active'] }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!loan) {
+      return res.json({ loan: null });
+    }
+
+    // Calculate details
+    const repayments = await prisma.walletTransaction.findMany({
+      where: { reference: loan.id, type: 'loan_repayment_replenish' }
+    });
+
+    const paidAmount = repayments.reduce((sum, t) => sum + t.amount, 0);
+    const totalAmount = loan.amount; // Assuming 0 interest for now based on schema
+    const interestRate = 0; // Fixed for now
+    const outstandingBalance = Math.max(0, totalAmount - paidAmount);
+
+    // Generate Schedule (Synthetic 4 weeks)
+    const schedule = [];
+    const weeks = 4;
+    const weeklyAmount = totalAmount / weeks;
+    let runningPaid = paidAmount;
+
+    for (let i = 1; i <= weeks; i++) {
+      const dueDate = new Date(loan.createdAt);
+      dueDate.setDate(dueDate.getDate() + (i * 7));
+
+      let status: 'paid' | 'upcoming' | 'overdue' = 'upcoming';
+      let paidDate = undefined;
+
+      if (runningPaid >= weeklyAmount) {
+        status = 'paid';
+        runningPaid -= weeklyAmount;
+        // Approximate paid date as the latest transaction
+        paidDate = repayments.length > 0 ? repayments[repayments.length - 1].createdAt.toISOString() : undefined;
+      } else if (runningPaid > 0) {
+        // Partially paid, we'll mark as upcoming but logic could be complex. 
+        // For simple visualization, if the bucket isn't full, it's upcoming/overdue.
+        status = new Date() > dueDate ? 'overdue' : 'upcoming';
+        runningPaid = 0; // Consumed rest
+      } else {
+        status = new Date() > dueDate ? 'overdue' : 'upcoming';
+      }
+
+      schedule.push({
+        id: `${loan.id}-sch-${i}`,
+        payment_number: i,
+        due_date: dueDate.toISOString(),
+        amount: weeklyAmount,
+        status: status,
+        paid_date: paidDate
+      });
+    }
+
+    const nextPayment = schedule.find(s => s.status !== 'paid');
+
+    const loanDetails = {
+      id: loan.id,
+      loan_number: `LOAN-${loan.createdAt.getFullYear()}-${loan.id.substring(0, 4).toUpperCase()}`,
+      amount: loan.amount,
+      disbursed_date: loan.createdAt.toISOString(),
+      repayment_frequency: 'weekly',
+      interest_rate: interestRate,
+      total_amount: totalAmount,
+      outstanding_balance: outstandingBalance,
+      paid_amount: paidAmount,
+      next_payment_date: nextPayment?.due_date || loan.dueDate?.toISOString(),
+      next_payment_amount: nextPayment?.amount || 0,
+      status: loan.status === 'approved' ? 'active' : loan.status,
+      payment_schedule: schedule
+    };
+
+    res.json({ loan: loanDetails });
+
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getCreditTransactions = async (req: AuthRequest, res: Response) => {
+  try {
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    const wallets = await prisma.wallet.findMany({
+      where: { consumerId: consumerProfile.id }
+    });
+    const walletIds = wallets.map(w => w.id);
+
+    const transactions = await prisma.walletTransaction.findMany({
+      where: {
+        walletId: { in: walletIds },
+        // Filter for specific types relevant to credit history
+        type: { in: ['loan_disbursement', 'purchase', 'debit', 'loan_repayment_replenish'] }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const mappedTransactions = transactions.map(t => {
+      let type: 'loan_given' | 'payment_made' | 'card_order' = 'card_order';
+      let paymentMethod = undefined;
+
+      if (t.type === 'loan_disbursement') {
+        type = 'loan_given';
+      } else if (t.type === 'purchase') {
+        type = 'card_order';
+        paymentMethod = 'Wallet';
+      } else if (t.type === 'debit' && t.description?.includes('Loan Repayment')) {
+        type = 'payment_made';
+        paymentMethod = 'Wallet';
+      } else if (t.type === 'loan_repayment_replenish') {
+        // duplicate of debit but on credit wallet side. 
+        // We might want to filter this out if we already capture the Debit on dashboard wallet,
+        // OR if we want to show the specific credit ledger effect. Only show if we didn't show the debit?
+        // For simplicity, let's treat it as payment_made on the credit ledger
+        type = 'payment_made';
+      } else {
+        return null; // Don't include generic debits not related to loans
+      }
+
+      return {
+        id: t.id,
+        type,
+        amount: Math.abs(t.amount),
+        date: t.createdAt.toISOString(),
+        description: t.description || 'Transaction',
+        reference_number: t.reference || t.id.substring(0, 8).toUpperCase(),
+        shop_name: t.type === 'purchase' ? 'Retailer' : undefined, // Could fetch actual retailer if we stored retailerId in transaction
+        loan_number: (t.type === 'loan_disbursement' || t.type.includes('repayment')) ? (t.reference ? `LOAN-${t.reference.substring(0, 4)}` : undefined) : undefined,
+        payment_method: paymentMethod,
+        status: t.status
+      };
+    }).filter(t => t !== null);
+
+    res.json({ transactions: mappedTransactions });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getFoodCredit = async (req: AuthRequest, res: Response) => {
+  res.json({ available_credit: 2500 }); // Mock for now
 };

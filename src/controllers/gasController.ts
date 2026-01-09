@@ -235,6 +235,13 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
             }
         });
 
+        // Generate gas meter token (16 digits formatted as XXXX-XXXX-XXXX-XXXX)
+        const generateToken = () => {
+            const digits = Math.random().toString().slice(2, 18).padEnd(16, '0');
+            return digits.match(/.{1,4}/g)?.join('-') || '0000-0000-0000-0000';
+        };
+        const token = generateToken();
+
         res.json({
             success: true,
             data: {
@@ -243,6 +250,7 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 meter_number,
                 amount,
                 units,
+                token,
                 reward_units: rewardUnits,
                 new_wallet_balance: wallet.balance - amount
             },

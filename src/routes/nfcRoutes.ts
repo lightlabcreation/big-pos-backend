@@ -1,13 +1,24 @@
 import { Router } from 'express';
-// import { } from '../controllers/nfcController'; // Controller missing
+import {
+    getMyCards,
+    linkCard,
+    unlinkCard,
+    setCardPin,
+    setPrimaryCard,
+    updateCardNickname
+} from '../controllers/nfcController';
 import { authenticate } from '../middleware/authMiddleware';
 
 const router = Router();
 
 router.use(authenticate);
 
-router.get('/', (req, res) => {
-    res.json({ message: 'NFC routes working' });
-});
+// Consumer card management
+router.get('/cards', getMyCards);
+router.post('/cards/link', linkCard);
+router.delete('/cards/:id', unlinkCard);
+router.put('/cards/:id/pin', setCardPin);
+router.put('/cards/:id/primary', setPrimaryCard);
+router.put('/cards/:id/nickname', updateCardNickname);
 
 export default router;

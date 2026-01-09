@@ -9,6 +9,7 @@ import employeeRoutes from './routes/employeeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
+import debugRoutes from './routes/debugRoutes';
 
 
 
@@ -34,10 +35,10 @@ app.use('/employee/auth', authRoutes);
 
 app.use('/store', storeRoutes);
 app.use('/retailer', retailerRoutes);
-import debugRoutes from './routes/debugRoutes';
-
-// ... imports
-
+app.use('/wholesaler', wholesalerRoutes);
+app.use('/employee', employeeRoutes);
+app.use('/admin', adminRoutes);
+app.use('/nfc', nfcRoutes); // Added NFC routes
 app.use('/wallet', walletRoutes);
 app.use('/debug', debugRoutes); // Public debug endpoint
 
@@ -49,7 +50,7 @@ app.get('/', (req, res) => {
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('SERVER ERROR:', err);
-  
+
   // Log to file
   try {
     const fs = require('fs');
@@ -61,7 +62,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     console.error('Failed to write to error log:', fsError);
   }
 
-  res.status(500).json({ 
+  res.status(500).json({
     success: false,
     message: 'Internal Server Error',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined

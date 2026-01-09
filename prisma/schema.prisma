@@ -133,6 +133,7 @@ model ConsumerProfile {
   gasTopups       GasTopup[]
   gasRewards      GasReward[]
   customerOrders  CustomerOrder[]
+  settings        ConsumerSettings?
 }
 
 model Product {
@@ -488,4 +489,19 @@ model Category {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Consumer Settings - Notification preferences for consumers
+model ConsumerSettings {
+  id                  String          @id @default(uuid())
+  consumerId          String          @unique
+  consumer            ConsumerProfile @relation(fields: [consumerId], references: [id])
+  
+  // Notification Preferences
+  pushNotifications   Boolean         @default(true)
+  emailNotifications  Boolean         @default(true)
+  smsNotifications    Boolean         @default(false)
+  
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 }
