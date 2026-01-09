@@ -69,6 +69,11 @@ router.get('/retailer-orders/stats', getRetailerOrders);
 router.get('/retailer-orders/:id', getOrder);
 router.put('/retailer-orders/:id/status', updateOrderStatus);
 
+// Credit Management (Wholesaler specific)
+router.get('/credit-requests', getCreditRequests);
+router.post('/credit-requests/:id/approve', approveCreditRequest);
+router.post('/credit-requests/:id/reject', rejectCreditRequest);
+
 // Retailers
 router.get('/retailers', getRetailers);
 router.get('/retailers/stats', getRetailerStats);

@@ -25,7 +25,15 @@ import {
   createEmployee,
   updateEmployee,
   deleteEmployee,
-  getProducts
+  getProducts,
+  approveLoan,
+  rejectLoan,
+  registerNFCCard,
+  blockNFCCard,
+  activateNFCCard,
+  unlinkNFCCard,
+  getTransactionReport,
+  getRevenueReport
 } from '../controllers/adminController';
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../controllers/supplierController';
 import { getJobs, createJob, updateJob, deleteJob, getApplications, createApplication, updateApplicationStatus } from '../controllers/recruitmentController';
@@ -59,7 +67,14 @@ router.delete('/wholesalers/:id', deleteWholesaler);
 router.post('/wholesalers/:id/status', updateWholesalerStatus);
 
 router.get('/loans', getLoans);
+router.post('/loans/:id/approve', approveLoan);
+router.post('/loans/:id/reject', rejectLoan);
+
 router.get('/nfc-cards', getNFCCards);
+router.post('/nfc-cards', registerNFCCard);
+router.put('/nfc-cards/:id/block', blockNFCCard);
+router.put('/nfc-cards/:id/activate', activateNFCCard);
+router.put('/nfc-cards/:id/unlink', unlinkNFCCard);
 
 // Product Routes
 router.get('/products', getProducts);
@@ -96,5 +111,9 @@ router.get('/employees', getEmployees);
 router.post('/employees', createEmployee);
 router.put('/employees/:id', updateEmployee);
 router.delete('/employees/:id', deleteEmployee);
+
+// Report Routes
+router.get('/reports/transactions', getTransactionReport);
+router.get('/reports/revenue', getRevenueReport);
 
 export default router;

@@ -40,8 +40,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         attendance: presentDays,
         late: lateDays,
         absent: absentDays,
-        tasksCompleted: 42, // Placeholder
-        pendingTasks: 5    // Placeholder
+        tasksCompleted: await prisma.task.count({ where: { assignedToId: employeeProfile.id, status: 'COMPLETED' } }),
+        pendingTasks: await prisma.task.count({ where: { assignedToId: employeeProfile.id, status: { not: 'COMPLETED' } } })
       }
     });
   } catch (error: any) {
@@ -311,10 +311,20 @@ export const getPayslips = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get tasks (placeholder)
+// Get tasks 
 export const getTasks = async (req: AuthRequest, res: Response) => {
   try {
-    res.json({ tasks: [] });
+    const employeeProfile = await prisma.employeeProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+    if (!employeeProfile) return res.status(404).json({ error: 'Employee not found' });
+
+    const tasks = await prisma.task.findMany({
+      where: { assignedToId: employeeProfile.id },
+      include: { project: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ tasks });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

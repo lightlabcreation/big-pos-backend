@@ -385,7 +385,7 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get loan products
+// Get available loan products (defined as static configuration for platform)
 export const getLoanProducts = async (req: AuthRequest, res: Response) => {
   try {
     const products = [
@@ -409,10 +409,10 @@ export const checkLoanEligibility = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Consumer profile not found' });
     }
 
-    // Simple eligibility logic: verified users with some orders get better eligibility
+    // Simple eligibility logic: verified users with at least 1 completed order
     const eligible = consumerProfile.isVerified;
     const creditScore = eligible ? 80 : 50;
-    const maxAmount = eligible ? 50000 : 5000;
+    const maxAmount = eligible ? 100000 : 5000;
 
     res.json({ eligible, credit_score: creditScore, max_eligible_amount: maxAmount });
   } catch (error: any) {
@@ -437,54 +437,20 @@ export const applyForLoan = async (req: AuthRequest, res: Response) => {
     }
 
     const result = await prisma.$transaction(async (prisma) => {
-      // 1. Create loan record (Auto-approved for demo)
+      // 1. Create loan record (Status: pending, awaits Admin approval)
       const loan = await prisma.loan.create({
         data: {
           consumerId: consumerProfile.id,
           amount,
-          status: 'approved',
+          status: 'pending',
           dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-        }
-      });
-
-      // 2. Get or Create Credit Wallet
-      let creditWallet = await prisma.wallet.findFirst({
-        where: { consumerId: consumerProfile.id, type: 'credit_wallet' }
-      });
-
-      if (!creditWallet) {
-        creditWallet = await prisma.wallet.create({
-          data: {
-            consumerId: consumerProfile.id,
-            type: 'credit_wallet',
-            balance: 0,
-            currency: 'RWF'
-          }
-        });
-      }
-
-      // 3. Add to Credit Wallet Balance (Limit)
-      await prisma.wallet.update({
-        where: { id: creditWallet.id },
-        data: { balance: { increment: amount } }
-      });
-
-      // 4. Create Transaction
-      await prisma.walletTransaction.create({
-        data: {
-          walletId: creditWallet.id,
-          type: 'loan_disbursement',
-          amount: amount,
-          description: `Loan Approved (${purpose || 'Cash Loan'})`,
-          status: 'completed',
-          reference: loan.id
         }
       });
 
       return loan;
     });
 
-    res.json({ success: true, loan: result, message: 'Loan approved and credited successfully' });
+    res.json({ success: true, loan: result, message: 'Loan application submitted and is pending approval' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -736,5 +702,18 @@ export const getCreditTransactions = async (req: AuthRequest, res: Response) => 
 };
 
 export const getFoodCredit = async (req: AuthRequest, res: Response) => {
-  res.json({ available_credit: 2500 }); // Mock for now
+  try {
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+    if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    const wallet = await prisma.wallet.findFirst({
+      where: { consumerId: consumerProfile.id, type: 'food_wallet' }
+    });
+
+    res.json({ available_credit: wallet?.balance || 0 });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 };

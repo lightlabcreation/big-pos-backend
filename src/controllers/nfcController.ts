@@ -27,8 +27,8 @@ export const getMyCards = async (req: AuthRequest, res: Response) => {
             status: card.status || 'active',
             is_primary: index === 0, // Assume first card is primary for now
             linked_at: card.createdAt,
-            last_used: card.createdAt, // Placeholder
-            nickname: `Card ${index + 1}` // Placeholder
+            last_used: card.updatedAt,
+            nickname: `NFC Card (${card.uid.slice(-4)})`
         }));
 
         res.json({

@@ -673,6 +673,24 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
+    const currentOrder = await prisma.order.findUnique({ where: { id } });
+    if (!currentOrder) return res.status(404).json({ error: 'Order not found' });
+
+    // State machine: pending -> confirmed -> shipped -> delivered
+    const validTransitions: Record<string, string[]> = {
+      'pending': ['confirmed', 'cancelled'],
+      'confirmed': ['shipped', 'cancelled'],
+      'shipped': ['delivered'],
+      'delivered': [],
+      'cancelled': []
+    };
+
+    if (!validTransitions[currentOrder.status]?.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status transition from ${currentOrder.status} to ${status}`
+      });
+    }
+
     const order = await prisma.order.update({
       where: { id },
       data: { status }
@@ -684,11 +702,117 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get credit requests (placeholder)
+// ==========================================
+// CREDIT MANAGEMENT
+// ==========================================
+
 export const getCreditRequests = async (req: AuthRequest, res: Response) => {
   try {
-    // This would require a CreditRequest model in the schema
-    res.json({ requests: [] });
+    const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!wholesalerProfile) return res.status(404).json({ error: 'Wholesaler not found' });
+
+    const requests = await prisma.creditRequest.findMany({
+      where: {
+        retailerProfile: {
+          orders: {
+            some: { wholesalerId: wholesalerProfile.id }
+          }
+        }
+      },
+      include: {
+        retailerProfile: {
+          include: { user: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ requests });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const approveCreditRequest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    const result = await prisma.$transaction(async (prisma) => {
+      const request = await prisma.creditRequest.findUnique({
+        where: { id }
+      });
+
+      if (!request) throw new Error('Credit request not found');
+      if (request.status !== 'pending') throw new Error('Request already processed');
+
+      // 1. Update Request
+      await prisma.creditRequest.update({
+        where: { id },
+        data: {
+          status: 'approved',
+          reviewedAt: new Date(),
+          reviewNotes: notes
+        }
+      });
+
+      // 2. Update Retailer Credit
+      const credit = await prisma.retailerCredit.findUnique({
+        where: { retailerId: request.retailerId }
+      });
+
+      if (credit) {
+        await prisma.retailerCredit.update({
+          where: { id: credit.id },
+          data: {
+            creditLimit: { increment: request.amount },
+            availableCredit: { increment: request.amount }
+          }
+        });
+      } else {
+        await prisma.retailerCredit.create({
+          data: {
+            retailerId: request.retailerId,
+            creditLimit: request.amount,
+            availableCredit: request.amount,
+            usedCredit: 0
+          }
+        });
+      }
+
+      // Also update retailer profile main balance/limit for compatibility
+      await prisma.retailerProfile.update({
+        where: { id: request.retailerId },
+        data: { creditLimit: { increment: request.amount } }
+      });
+
+      return { success: true };
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const rejectCreditRequest = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+
+    await prisma.creditRequest.update({
+      where: { id },
+      data: {
+        status: 'rejected',
+        reviewedAt: new Date(),
+        reviewNotes: notes
+      }
+    });
+
+    res.json({ success: true, message: 'Credit request rejected' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

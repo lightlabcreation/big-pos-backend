@@ -99,6 +99,7 @@ router.get('/orders', authenticate, getMyOrders);
 router.get('/wallet/balance', authenticate, getWalletBalance);
 router.get('/rewards/balance', authenticate, getRewardsBalance);
 router.get('/loans', authenticate, getLoans); // List of loans
+router.get('/loans/products', authenticate, getLoanProducts);
 router.get('/loans/active', authenticate, getActiveLoanLedger); // Active loan detailed ledger
 router.get('/loans/transactions', authenticate, getCreditTransactions); // filtered credit-related transactions
 router.get('/loans/eligibility', authenticate, checkLoanEligibility);

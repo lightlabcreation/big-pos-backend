@@ -681,7 +681,7 @@ export const scanBarcode = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Create Sale
+// Create Sale (Retailer POS)
 export const createSale = async (req: AuthRequest, res: Response) => {
   try {
     const retailerProfile = await prisma.retailerProfile.findUnique({
@@ -694,13 +694,15 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
     const {
       items,
-      payment_method,
+      payment_method, // 'cash', 'nfc', 'wallet', 'momo'
       subtotal,
       tax_amount,
       discount,
       customer_phone,
-      payment_details
+      payment_details // { pin, uid } for NFC
     } = req.body;
+
+    const total = (subtotal + tax_amount - (discount || 0));
 
     // 1. Validate items and stock
     for (const item of items) {
@@ -712,13 +714,54 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // 2. Perform Transaction (Create Sale, Decrement Stock)
+    // 2. Perform Transaction
     const result = await prisma.$transaction(async (prisma) => {
+      let consumerId = null;
+
+      // --- Handle NFC Payment ---
+      if (payment_method === 'nfc') {
+        const { uid, pin } = payment_details || {};
+        const card = await prisma.nfcCard.findUnique({ where: { uid } });
+
+        if (!card) throw new Error('NFC Card not found');
+        if (card.status !== 'active') throw new Error('NFC Card is not active');
+        if (pin && card.pin !== pin) throw new Error('Invalid NFC PIN');
+        if (card.balance < total) throw new Error('Insufficient NFC card balance');
+
+        // Deduct from card
+        await prisma.nfcCard.update({
+          where: { id: card.id },
+          data: { balance: { decrement: total } }
+        });
+
+        consumerId = card.consumerId;
+      }
+
+      // --- Handle Wallet Payment ---
+      if (payment_method === 'wallet') {
+        if (!customer_phone) throw new Error('Customer phone required for wallet payment');
+        const consumer = await prisma.consumerProfile.findFirst({
+          where: { user: { phone: customer_phone } }
+        });
+
+        if (!consumer) throw new Error('Consumer profile not found for this phone number');
+        if (consumer.walletBalance < total) throw new Error('Insufficient dashboard wallet balance');
+
+        // Deduct from wallet
+        await prisma.consumerProfile.update({
+          where: { id: consumer.id },
+          data: { walletBalance: { decrement: total } }
+        });
+
+        consumerId = consumer.id;
+      }
+
       // Create Sale Record
       const sale = await prisma.sale.create({
         data: {
           retailerId: retailerProfile.id,
-          totalAmount: (subtotal + tax_amount - (discount || 0)),
+          consumerId: consumerId,
+          totalAmount: total,
           paymentMethod: payment_method,
           status: 'completed',
           saleItems: {
@@ -739,6 +782,25 @@ export const createSale = async (req: AuthRequest, res: Response) => {
         });
       }
 
+      // Log Transaction if linked to consumer
+      if (consumerId && (payment_method === 'wallet' || payment_method === 'nfc')) {
+        const wallet = await prisma.wallet.findFirst({
+          where: { consumerId: consumerId, type: 'dashboard_wallet' }
+        });
+        if (wallet) {
+          await prisma.walletTransaction.create({
+            data: {
+              walletId: wallet.id,
+              type: 'purchase',
+              amount: -total,
+              description: `POS purchase at ${retailerProfile.shopName}`,
+              status: 'completed',
+              reference: sale.id
+            }
+          });
+        }
+      }
+
       return sale;
     });
 
@@ -746,6 +808,47 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
   } catch (error: any) {
     console.error('Sale failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update Sale Status (Retailer side for dashboard orders)
+export const updateSaleStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    const currentSale = await prisma.sale.findUnique({ where: { id } });
+    if (!currentSale || currentSale.retailerId !== retailerProfile?.id) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // State machine: pending -> confirmed -> ready -> completed / cancelled
+    const validTransitions: Record<string, string[]> = {
+      'pending': ['confirmed', 'cancelled'],
+      'confirmed': ['ready', 'cancelled'],
+      'ready': ['completed'],
+      'completed': [],
+      'cancelled': []
+    };
+
+    if (!validTransitions[currentSale.status]?.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status transition from ${currentSale.status} to ${status}`
+      });
+    }
+
+    const sale = await prisma.sale.update({
+      where: { id },
+      data: { status }
+    });
+
+    res.json({ success: true, sale });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
@@ -1239,11 +1342,10 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       id: retailerProfile.id,
       shop_name: retailerProfile.shopName,
       address: retailerProfile.address,
-      tin_number: "TIN123456789", // Mock as schema doesn't have it
-      contact_person: retailerProfile.user.name, // Use user name as contact person
-      is_verified: true, // Mock
+      contact_person: retailerProfile.user.name,
+      is_verified: retailerProfile.isVerified,
 
-      // Settings (Mock)
+      // Default Settings
       notifications: {
         push: true,
         email: true,
@@ -1378,8 +1480,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
 
     // 3. Revenue Metrics
     const totalRevenue = salesInPeriod.reduce((sum, s) => sum + s.totalAmount, 0);
-    // Compare with previous period (simplified mock logic for change %)
-    const changePercentage = 15.2;
+    const changePercentage = totalRevenue > 0 ? 0 : 0; // Growth calculation requires historical comparison, setting to 0 for literal correctness
 
     // 4. Daily Revenue (Last 7 Days) - specific for chart
     const sevenDaysAgo = new Date();
@@ -1495,7 +1596,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
       },
       customers: {
         total: customerStats.size,
-        newThisMonth: 5, // Mock
+        newThisMonth: 0,
         topBuyers: topBuyers
       }
     });

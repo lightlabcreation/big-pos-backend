@@ -12,6 +12,7 @@ import {
   getPOSProducts,
   scanBarcode,
   createSale,
+  updateSaleStatus,
   getDailySales,
   getWholesalerProducts,
   createOrder,
@@ -38,7 +39,8 @@ router.post('/inventory', createProduct);
 router.put('/inventory/:id', updateProduct);
 router.get('/orders', getOrders);
 router.get('/orders/:id', getOrder);
-router.post('/orders', createOrder); // Add this line
+router.put('/orders/:id/status', updateSaleStatus);
+router.post('/orders', createOrder);
 router.get('/branches', getBranches);
 router.post('/branches', createBranch);
 router.get('/wallet', getWallet);
