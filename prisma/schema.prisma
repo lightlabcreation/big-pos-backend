@@ -52,6 +52,7 @@ model WholesalerProfile {
   contactPerson    String?
   tinNumber        String?
   address          String?
+  isVerified      Boolean             @default(false)
   receivedOrders   Order[]
   inventory        Product[]
   suppliers        Supplier[]

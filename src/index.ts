@@ -1,4 +1,4 @@
-import express from 'express';
+import express from 'express'; // Restart trigger
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/authRoutes';
@@ -11,6 +11,7 @@ import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
 import debugRoutes from './routes/debugRoutes';
 import trainingRoutes from './routes/trainingRoutes';
+console.log('--- Server Starting ---');
 
 dotenv.config();
 
@@ -23,13 +24,17 @@ app.use(cors({
   credentials: true
 }));
 
+app.use(express.json());
+
 // Request Logger
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.url}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log(`  Body: ${JSON.stringify(req.body)}`);
+  }
   next();
 });
-
-app.use(express.json());
 
 // Routes
 app.use('/store/auth', authRoutes); // Consumer uses /store/auth

@@ -169,7 +169,6 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get retailers
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
     const retailers = await prisma.retailerProfile.findMany({
@@ -350,7 +349,8 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
     });
     res.json({ success: true, categories });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Get Categories Error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -359,13 +359,13 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
     const { name, description, code } = req.body;
 
     if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
+      return res.status(400).json({ success: false, message: 'Name is required' });
     }
 
     // Check if code exists
     if (code) {
       const existing = await prisma.category.findUnique({ where: { code } });
-      if (existing) return res.status(400).json({ error: 'Category code already exists' });
+      if (existing) return res.status(400).json({ success: false, message: 'Category code already exists' });
     }
 
     const category = await prisma.category.create({
@@ -376,24 +376,25 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
         isActive: true
       }
     });
-    res.status(201).json({ success: true, category });
+    res.status(201).json({ success: true, category, message: 'Category created successfully' });
   } catch (error: any) {
     console.error('Create Category Error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 export const updateCategory = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, isActive } = req.body;
+    const { name, code, description, isActive } = req.body;
     const category = await prisma.category.update({
       where: { id },
-      data: { name, description, isActive }
+      data: { name, code, description, isActive }
     });
-    res.json({ success: true, category });
+    res.json({ success: true, category, message: 'Category updated successfully' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Update Category Error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -401,9 +402,10 @@ export const deleteCategory = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     await prisma.category.delete({ where: { id } });
-    res.json({ success: true, message: 'Category deleted' });
+    res.json({ success: true, message: 'Category deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('Delete Category Error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -484,7 +486,7 @@ export const verifyRetailer = async (req: AuthRequest, res: Response) => {
 
     // Check if retailer exists
     const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
-    if (!retailer) return res.status(404).json({ error: 'Retailer not found' });
+    if (!retailer) return res.status(404).json({ success: false, message: 'Retailer not found' });
 
     // Update isVerified status
     await prisma.retailerProfile.update({
@@ -495,7 +497,28 @@ export const verifyRetailer = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, message: 'Retailer verified successfully' });
   } catch (error: any) {
     console.error('Verify Retailer Error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const verifyWholesaler = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if wholesaler exists
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    if (!wholesaler) return res.status(404).json({ success: false, message: 'Wholesaler not found' });
+
+    // Update isVerified status
+    await prisma.wholesalerProfile.update({
+      where: { id },
+      data: { isVerified: true }
+    });
+
+    res.json({ success: true, message: 'Wholesaler verified successfully' });
+  } catch (error: any) {
+    console.error('Verify Wholesaler Error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -569,23 +592,70 @@ export const deleteWholesaler = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateWholesalerStatus = async (req: AuthRequest, res: Response) => {
+export const updateRetailerStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { isActive, status } = req.body;
+    console.log(`Updating Retailer Status - ID: ${id}, isActive: ${isActive}, status: ${status}`);
 
-    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
-    if (!wholesaler) return res.status(404).json({ error: 'Wholesaler not found' });
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
+    if (!retailer) {
+      console.log(`Retailer NOT FOUND for ID: ${id}`);
+      return res.status(404).json({ error: 'Retailer not found' });
+    }
 
-    // Determine new status (support both formats for backward compatibility/safety)
+    // Determine new status
     let newStatus = false;
     if (typeof isActive === 'boolean') {
       newStatus = isActive;
     } else if (status === 'active') {
       newStatus = true;
+    } else if (status === 'inactive') {
+      newStatus = false;
     }
 
-    // Update User status (since login depends on User.isActive)
+    console.log(`Resolved status for User ${retailer.userId}: ${newStatus}`);
+
+    // Update User status
+    await prisma.user.update({
+      where: { id: retailer.userId },
+      data: {
+        isActive: newStatus
+      }
+    });
+
+    res.json({ success: true, message: `Retailer status updated to ${newStatus ? 'active' : 'inactive'}` });
+  } catch (error: any) {
+    console.error('Update Retailer Status Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateWholesalerStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isActive, status } = req.body;
+    console.log(`Updating Wholesaler Status - ID: ${id}, isActive: ${isActive}, status: ${status}`);
+
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    if (!wholesaler) {
+      console.log(`Wholesaler NOT FOUND for ID: ${id}`);
+      return res.status(404).json({ error: 'Wholesaler not found' });
+    }
+
+    // Determine new status
+    let newStatus = false;
+    if (typeof isActive === 'boolean') {
+      newStatus = isActive;
+    } else if (status === 'active') {
+      newStatus = true;
+    } else if (status === 'inactive') {
+      newStatus = false;
+    }
+
+    console.log(`Resolved status for User ${wholesaler.userId}: ${newStatus}`);
+
+    // Update User status
     await prisma.user.update({
       where: { id: wholesaler.userId },
       data: {
@@ -596,7 +666,7 @@ export const updateWholesalerStatus = async (req: AuthRequest, res: Response) =>
     res.json({ success: true, message: `Wholesaler status updated to ${newStatus ? 'active' : 'inactive'}` });
   } catch (error: any) {
     console.error('Update Wholesaler Status Error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -716,20 +786,56 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
 export const deleteCustomer = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const profile = await prisma.consumerProfile.findUnique({ where: { id } });
+    const profile = await prisma.consumerProfile.findUnique({
+      where: { id },
+      include: { wallets: true }
+    });
 
-    if (profile) {
-      // Must delete the profile (child) first because it references the user (parent)
-      await prisma.consumerProfile.delete({ where: { id } });
-
-      // Now safe to delete the user
-      await prisma.user.delete({ where: { id: profile.userId } });
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Customer profile not found' });
     }
 
-    res.json({ success: true, message: 'Customer deleted' });
+    // Manual Cascade Deletion
+    await prisma.$transaction([
+      // 1. Delete Wallet Transactions
+      prisma.walletTransaction.deleteMany({
+        where: { walletId: { in: profile.wallets.map(w => w.id) } }
+      }),
+      // 2. Delete Wallets
+      prisma.wallet.deleteMany({ where: { consumerId: id } }),
+      // 3. Delete Gas Topups and Rewards
+      prisma.gasTopup.deleteMany({ where: { consumerId: id } }),
+      prisma.gasReward.deleteMany({ where: { consumerId: id } }),
+      // 4. Delete Gas Meters
+      prisma.gasMeter.deleteMany({ where: { consumerId: id } }),
+      // 5. Delete Customer Orders
+      prisma.customerOrder.deleteMany({ where: { consumerId: id } }),
+      // 6. Delete Loans
+      prisma.loan.deleteMany({ where: { consumerId: id } }),
+      // 7. Unlink or delete NFC cards (unlinking is safer if cards are reusable)
+      prisma.nfcCard.updateMany({
+        where: { consumerId: id },
+        data: { consumerId: null, status: 'inactive' }
+      }),
+      // 8. Delete Sales (if they belong to this consumer)
+      prisma.sale.deleteMany({ where: { consumerId: id } }),
+      // 9. Delete Settings
+      prisma.consumerSettings.deleteMany({ where: { consumerId: id } }),
+      // 10. Delete Messages and Notifications
+      prisma.message.deleteMany({
+        where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
+      }),
+      prisma.notification.deleteMany({ where: { userId: profile.userId } }),
+      // 11. Delete the profile itself
+      prisma.consumerProfile.delete({ where: { id } }),
+      // 12. Finally delete the User record
+      prisma.user.delete({ where: { id: profile.userId } })
+    ]);
+
+    res.json({ success: true, message: 'Customer and all associated data deleted successfully' });
   } catch (error: any) {
     console.error('Delete Customer Error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

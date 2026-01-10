@@ -15,6 +15,8 @@ import {
   updateWholesaler,
   deleteWholesaler,
   updateWholesalerStatus,
+  updateRetailerStatus,
+  verifyWholesaler,
   getLoans,
   getNFCCards,
   getCategories,
@@ -58,6 +60,7 @@ router.post('/retailers', createRetailer);
 router.put('/retailers/:id', updateRetailer);
 router.delete('/retailers/:id', deleteRetailer);
 router.post('/retailers/:id/verify', verifyRetailer);
+router.post('/retailers/:id/status', updateRetailerStatus);
 
 // Wholesaler Routes
 router.get('/wholesalers', getWholesalers);
@@ -65,6 +68,7 @@ router.post('/wholesalers', createWholesaler);
 router.put('/wholesalers/:id', updateWholesaler);
 router.delete('/wholesalers/:id', deleteWholesaler);
 router.post('/wholesalers/:id/status', updateWholesalerStatus);
+router.post('/wholesalers/:id/verify', verifyWholesaler);
 
 router.get('/loans', getLoans);
 router.post('/loans/:id/approve', approveLoan);

@@ -121,6 +121,10 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials or role' });
     }
 
+    if (user.isActive === false) {
+      return res.status(403).json({ error: 'Account is deactivated. Please contact support.' });
+    }
+
     // Verify Password or PIN
     let valid = false;
     if (targetuser_role === 'consumer') {
