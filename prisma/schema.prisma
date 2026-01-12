@@ -25,6 +25,8 @@ model User {
   notifications                    Notification[]
   retailerProfile                  RetailerProfile?
   wholesalerProfile                WholesalerProfile?
+
+  @@map("user")
 }
 
 model RetailerProfile {
@@ -43,6 +45,8 @@ model RetailerProfile {
   credit         RetailerCredit?
   user           User            @relation(fields: [userId], references: [id])
   sales          Sale[]
+
+    @@map("retailerProfile")
 }
 
 model WholesalerProfile {
@@ -59,6 +63,8 @@ model WholesalerProfile {
   supplierPayments SupplierPayment[]
   user             User                @relation(fields: [userId], references: [id])
   settings         WholesalerSettings?
+
+      @@map("wholesalerProfile")
 }
 
 model WholesalerSettings {
@@ -79,6 +85,8 @@ model WholesalerSettings {
   nfcEnabled         Boolean           @default(true)
   updatedAt          DateTime          @updatedAt
   wholesaler         WholesalerProfile @relation(fields: [wholesalerId], references: [id])
+
+  @@map("wholesalerSettings")
 }
 
 
@@ -115,7 +123,7 @@ model LeaveRequest {
   employeeProfile EmployeeProfile @relation(fields: [employeeId], references: [id], map: "LeaveRequest_employeeId_fkey")
 
   @@index([employeeId], map: "LeaveRequest_employeeId_fkey")
-  @@map("leaverequest")
+  @@map("leaveRequest")
 }
 
 model BillPayment {
@@ -136,7 +144,7 @@ model BillPayment {
   employeeProfile   EmployeeProfile @relation(fields: [employeeId], references: [id], map: "BillPayment_employeeId_fkey")
 
   @@index([employeeId], map: "BillPayment_employeeId_fkey")
-  @@map("billpayment")
+  @@map("billPayment")
 }
 
 model Branch {
@@ -185,7 +193,7 @@ model ConsumerProfile {
   wallets         Wallet[]
   settings        ConsumerSettings?
 
-  @@map("consumerprofile")
+  @@map("consumerProfile")
 }
 
 model CreditRequest {
@@ -201,7 +209,7 @@ model CreditRequest {
   retailerProfile RetailerProfile @relation(fields: [retailerId], references: [id], map: "CreditRequest_retailerId_fkey")
 
   @@index([retailerId], map: "CreditRequest_retailerId_fkey")
-  @@map("creditrequest")
+  @@map("creditRequest")
 }
 
 model CustomerOrder {
@@ -218,7 +226,7 @@ model CustomerOrder {
   consumerProfile ConsumerProfile @relation(fields: [consumerId], references: [id], map: "CustomerOrder_consumerId_fkey")
 
   @@index([consumerId], map: "CustomerOrder_consumerId_fkey")
-  @@map("customerorder")
+  @@map("customerOrder")
 }
 
 model Deal {
@@ -232,6 +240,8 @@ model Deal {
   expectedCloseDate DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  @@map("deal")
 }
 
 
@@ -255,7 +265,7 @@ model EmployeeProfile {
   courseEnrollments CourseEnrollment[]
   updatedAt      DateTime       @updatedAt
 
-  @@map("employeeprofile")
+  @@map("employeeProfile")
 }
 
 model GasMeter {
@@ -272,7 +282,7 @@ model GasMeter {
   gasTopups        GasTopup[]
 
   @@index([consumerId], map: "GasMeter_consumerId_fkey")
-  @@map("gasmeter")
+  @@map("gasMeter")
 }
 
 model GasReward {
@@ -286,7 +296,7 @@ model GasReward {
   consumerProfile ConsumerProfile @relation(fields: [consumerId], references: [id], map: "GasReward_consumerId_fkey")
 
   @@index([consumerId], map: "GasReward_consumerId_fkey")
-  @@map("gasreward")
+  @@map("gasReward")
 }
 
 model GasTopup {
@@ -305,7 +315,7 @@ model GasTopup {
 
   @@index([consumerId], map: "GasTopup_consumerId_fkey")
   @@index([meterId], map: "GasTopup_meterId_fkey")
-  @@map("gastopup")
+  @@map("gasTopup")
 }
 
 model JobApplication {
@@ -321,7 +331,7 @@ model JobApplication {
   jobPosting  JobPosting @relation(fields: [jobId], references: [id], map: "JobApplication_jobId_fkey")
 
   @@index([jobId], map: "JobApplication_jobId_fkey")
-  @@map("jobapplication")
+  @@map("jobApplication")
 }
 
 model JobPosting {
@@ -338,7 +348,7 @@ model JobPosting {
   updatedAt      DateTime         @updatedAt
   jobApplications JobApplication[]
 
-  @@map("jobposting")
+  @@map("jobPosting")
 }
 
 
@@ -400,7 +410,7 @@ model NfcCard {
 
   @@index([consumerId], map: "NfcCard_consumerId_fkey")
   @@index([retailerId], map: "NfcCard_retailerId_fkey")
-  @@map("nfccard")
+  @@map("nfcCard")
 }
 
 model Notification {
@@ -446,7 +456,7 @@ model OrderItem {
 
   @@index([orderId], map: "OrderItem_orderId_fkey")
   @@index([productId], map: "OrderItem_productId_fkey")
-  @@map("orderitem")
+  @@map("orderItem")
 }
 
 model Product {
@@ -490,7 +500,7 @@ model ProfitInvoice {
   updatedAt     DateTime @updatedAt
   order         Order    @relation(fields: [orderId], references: [id], map: "ProfitInvoice_orderId_fkey")
 
-  @@map("profitinvoice")
+  @@map("profitInvoice")
 }
 
 model RetailerCredit {
@@ -502,7 +512,7 @@ model RetailerCredit {
   updatedAt       DateTime        @updatedAt
   retailerProfile RetailerProfile @relation(fields: [retailerId], references: [id], map: "RetailerCredit_retailerId_fkey")
 
-  @@map("retailercredit")
+  @@map("retailerCredit")
 }
 
 
@@ -538,7 +548,7 @@ model SaleItem {
 
   @@index([productId], map: "SaleItem_productId_fkey")
   @@index([saleId], map: "SaleItem_saleId_fkey")
-  @@map("saleitem")
+  @@map("saleItem")
 }
 
 model Supplier {
@@ -576,7 +586,7 @@ model SupplierPayment {
 
   @@index([supplierId], map: "SupplierPayment_supplierId_fkey")
   @@index([wholesalerId], map: "SupplierPayment_wholesalerId_fkey")
-  @@map("supplierpayment")
+  @@map("supplierPayment")
 }
 
 model Terminal {
@@ -619,7 +629,7 @@ model WalletTransaction {
   wallet      Wallet   @relation(fields: [walletId], references: [id], map: "WalletTransaction_walletId_fkey")
 
   @@index([walletId], map: "WalletTransaction_walletId_fkey")
-  @@map("wallettransaction")
+  @@map("walletTransaction")
 }
 
 
@@ -677,7 +687,7 @@ model ProjectMember {
   @@unique([projectId, employeeId], map: "ProjectMember_projectId_employeeId_key")
   @@index([projectId], map: "ProjectMember_projectId_fkey")
   @@index([employeeId], map: "ProjectMember_employeeId_fkey")
-  @@map("projectmember")
+  @@map("projectMember")
 }
 
 model Course {
@@ -713,7 +723,7 @@ model CourseEnrollment {
   @@unique([courseId, employeeId], map: "CourseEnrollment_courseId_employeeId_key")
   @@index([courseId], map: "CourseEnrollment_courseId_fkey")
   @@index([employeeId], map: "CourseEnrollment_employeeId_fkey")
-  @@map("courseenrollment")
+  @@map("courseEnrollment")
 }
 
 model Lesson {
@@ -743,7 +753,7 @@ model LessonProgress {
   @@unique([enrollmentId, lessonId], map: "LessonProgress_enrollmentId_lessonId_key")
   @@index([enrollmentId], map: "LessonProgress_enrollmentId_fkey")
   @@index([lessonId], map: "LessonProgress_lessonId_fkey")
-  @@map("lessonprogress")
+  @@map("lessonProgress")
 }
 
 enum course_level {
@@ -804,6 +814,8 @@ model ConsumerSettings {
   
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+
+  @@map("consumerSettings")
 }
 
 
@@ -829,7 +841,7 @@ model SystemConfig {
   updatedAt             DateTime @updatedAt
   createdAt             DateTime @default(now())
 
-  @@map("systemconfig")
+  @@map("systemConfig")
 }
 
 
