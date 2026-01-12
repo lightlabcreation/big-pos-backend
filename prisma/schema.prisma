@@ -379,6 +379,20 @@ model NfcCard {
   consumerId      String?
   retailerId      String?
   balance         Float            @default(0)
+  
+  // New Metadata Fields
+  cardType        String?
+  cardholderName String?
+  nationalId     String?
+  phone           String?
+  email           String?
+  province        String?
+  district        String?
+  sector          String?
+  cell            String?
+  streetAddress   String?
+  landmark        String?
+
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   consumerProfile ConsumerProfile? @relation(fields: [consumerId], references: [id], map: "NfcCard_consumerId_fkey")
@@ -443,6 +457,7 @@ model Product {
   category          String
   price             Float
   costPrice         Float?
+  retailerPrice     Float?           @default(0)
   stock             Int                @default(0)
   retailerId        String?
   wholesalerId      String?
@@ -789,6 +804,32 @@ model ConsumerSettings {
   
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+}
+
+
+model SystemConfig {
+  id                    String   @id @default(uuid())
+  
+  // Profit Margin Settings (%)
+  retailerShare         Float    @default(60)
+  companyShare          Float    @default(28)
+  gasRewardShare        Float    @default(12)
+  
+  // Gas Pricing (RWF)
+  gasPricePerM3         Float    @default(850)
+  minGasTopup           Float    @default(500)
+  maxGasTopup           Float    @default(100000)
+  
+  // Transaction Limits (RWF)
+  minWalletTopup        Float    @default(500)
+  maxWalletTopup        Float    @default(500000)
+  maxDailyTransaction    Float    @default(1000000)
+  maxCreditLimit        Float    @default(500000)
+  
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
+
+  @@map("systemconfig")
 }
 
 

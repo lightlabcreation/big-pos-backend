@@ -157,6 +157,81 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getReports = async (req: AuthRequest, res: Response) => {
+  try {
+    const { dateRange } = req.query;
+    const now = new Date();
+    let startDate = new Date(0); // All time default
+
+    if (dateRange === 'today') {
+      startDate = new Date(now.setHours(0, 0, 0, 0));
+    } else if (dateRange === '7days') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (dateRange === '30days') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (dateRange === 'year') {
+      startDate = new Date(now.getFullYear(), 0, 1);
+    }
+
+    // 1. Stats based on date range
+    const [sales, gasTopups] = await Promise.all([
+      prisma.sale.findMany({ where: { createdAt: { gte: startDate } } }),
+      prisma.gasTopup.findMany({ where: { createdAt: { gte: startDate } } })
+    ]);
+
+    const totalRevenue = sales.reduce((acc, s) => acc + s.totalAmount, 0);
+    const orderTotal = sales.length;
+    const gasDistributed = gasTopups.reduce((acc, g) => acc + g.units, 0);
+
+    // 2. Global counts
+    const [retailerTotal, wholesalerTotal, productTotal, customerTotal, loans] = await Promise.all([
+      prisma.retailerProfile.count(),
+      prisma.wholesalerProfile.count(),
+      prisma.product.count(),
+      prisma.consumerProfile.count(),
+      prisma.loan.findMany()
+    ]);
+
+    const activeLoans = loans.filter(l => l.status === 'active' || l.status === 'approved').length;
+    const pendingLoans = loans.filter(l => l.status === 'pending').length;
+    const totalLoanAmount = loans.reduce((acc, l) => (l.status === 'active' || l.status === 'approved') ? acc + l.amount : acc, 0);
+
+    // 3. Growth rate (Simple mock for now, or compare with previous period if data exists)
+    const growthRate = 12.5; 
+
+    res.json({
+      success: true,
+      summary: {
+        totalRevenue,
+        orderTotal,
+        retailerTotal,
+        wholesalerTotal,
+        gasDistributed,
+        growthRate,
+        businessOverview: {
+          totalProducts: productTotal,
+          totalCustomers: customerTotal,
+          totalSalesVolume: orderTotal, // Assuming volume means count here, or we could use total items
+          avgOrderValue: orderTotal > 0 ? Math.round(totalRevenue / orderTotal) : 0
+        },
+        loanOverview: {
+          activeLoans,
+          totalLoanAmount,
+          pendingApprovals: pendingLoans
+        },
+        targets: {
+          orders: 5000,
+          retailers: 200,
+          gas: 2000
+        }
+      }
+    });
+  } catch (error: any) {
+    console.error('Get Reports Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // Get customers
 export const getCustomers = async (req: AuthRequest, res: Response) => {
   try {
@@ -859,6 +934,112 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Create product
+export const createProduct = async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      name,
+      description,
+      sku,
+      category,
+      price,
+      costPrice,
+      retailerPrice,
+      stock,
+      unit,
+      lowStockThreshold,
+      invoiceNumber,
+      barcode,
+      wholesalerId,
+      retailerId
+    } = req.body;
+
+    const product = await prisma.product.create({
+      data: {
+        name,
+        description,
+        sku,
+        category,
+        price: parseFloat(price),
+        costPrice: costPrice ? parseFloat(costPrice) : null,
+        retailerPrice: retailerPrice ? parseFloat(retailerPrice) : null,
+        stock: parseInt(stock) || 0,
+        unit,
+        lowStockThreshold: lowStockThreshold ? parseInt(lowStockThreshold) : null,
+        invoiceNumber,
+        barcode,
+        wholesalerId,
+        retailerId,
+        status: 'active'
+      }
+    });
+
+    res.status(201).json({ success: true, product });
+  } catch (error: any) {
+    console.error('Create Product Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update product
+export const updateProduct = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      description,
+      sku,
+      category,
+      price,
+      costPrice,
+      retailerPrice,
+      stock,
+      unit,
+      lowStockThreshold,
+      invoiceNumber,
+      barcode,
+      status
+    } = req.body;
+
+    const product = await prisma.product.update({
+      where: { id },
+      data: {
+        name,
+        description,
+        sku,
+        category,
+        price: price ? parseFloat(price) : undefined,
+        costPrice: costPrice !== undefined ? (costPrice ? parseFloat(costPrice) : null) : undefined,
+        retailerPrice: retailerPrice !== undefined ? (retailerPrice ? parseFloat(retailerPrice) : null) : undefined,
+        stock: stock !== undefined ? parseInt(stock) : undefined,
+        unit,
+        lowStockThreshold: lowStockThreshold !== undefined ? (lowStockThreshold ? parseInt(lowStockThreshold) : null) : undefined,
+        invoiceNumber,
+        barcode,
+        status
+      }
+    });
+
+    res.json({ success: true, product });
+  } catch (error: any) {
+    console.error('Update Product Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Delete product
+export const deleteProduct = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.product.delete({ where: { id } });
+    res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (error: any) {
+    console.error('Delete Product Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
 // ==========================================
 // EMPLOYEE MANAGEMENT
 // ==========================================
@@ -1158,7 +1339,21 @@ export const rejectLoan = async (req: AuthRequest, res: Response) => {
 
 export const registerNFCCard = async (req: AuthRequest, res: Response) => {
   try {
-    const { uid, pin, metadata } = req.body;
+    const { 
+      uid, 
+      pin, 
+      cardType,
+      cardholderName,
+      nationalId,
+      phone,
+      email,
+      province,
+      district,
+      sector,
+      cell,
+      streetAddress,
+      landmark
+    } = req.body;
 
     if (!uid) return res.status(400).json({ error: 'UID is required' });
 
@@ -1170,7 +1365,18 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
         uid,
         pin: pin || '1234',
         status: 'available',
-        balance: 0
+        balance: 0,
+        cardType,
+        cardholderName,
+        nationalId,
+        phone,
+        email,
+        province,
+        district,
+        sector,
+        cell,
+        streetAddress,
+        landmark
       }
     });
 
@@ -1328,6 +1534,58 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
     });
 
     res.json({ success: true, orders: Object.values(grouped).sort((a, b) => a.period.localeCompare(b.period)) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ==========================================
+// SYSTEM CONFIGURATION
+// ==========================================
+
+export const getSystemConfig = async (req: AuthRequest, res: Response) => {
+  try {
+    let config = await prisma.systemConfig.findFirst();
+    
+    // Create default config if it doesn't exist
+    if (!config) {
+      config = await prisma.systemConfig.create({
+        data: {
+          retailerShare: 60,
+          companyShare: 28,
+          gasRewardShare: 12,
+          gasPricePerM3: 850,
+          minGasTopup: 500,
+          maxGasTopup: 100000,
+          minWalletTopup: 500,
+          maxWalletTopup: 500000,
+          maxDailyTransaction: 1000000,
+          maxCreditLimit: 500000
+        }
+      });
+    }
+    
+    res.json({ success: true, config });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateSystemConfig = async (req: AuthRequest, res: Response) => {
+  try {
+    const data = req.body;
+    let config = await prisma.systemConfig.findFirst();
+
+    if (!config) {
+      config = await prisma.systemConfig.create({ data });
+    } else {
+      config = await prisma.systemConfig.update({
+        where: { id: config.id },
+        data
+      });
+    }
+
+    res.json({ success: true, config });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
