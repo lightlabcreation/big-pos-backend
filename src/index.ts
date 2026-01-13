@@ -16,11 +16,32 @@ console.log('--- Server Starting ---');
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 9000;
+const PORT = process.env.PORT || 9001;
 
 // CORS Configuration
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3062",
+  "http://localhost:5173",
+  "http://localhost:9001", 
+  "http://localhost:9000",
+  "http://127.0.0.1:9001",
+  "https://big-company-frontend.vercel.app",
+  "https://big-pos-backend-production.up.railway.app",
+  "https://big-pos.netlify.app"
+];
+
 app.use(cors({
-  origin: true, // Auto-reflect origin in development, better than hardcoded list
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
@@ -57,6 +78,15 @@ app.use('/debug', debugRoutes); // Public debug endpoint
 
 app.get('/', (req, res) => {
   res.send('Big Company API is running');
+});
+
+// Handle 404 cases
+app.use((req, res, next) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    path: req.path
+  });
 });
 
 // Global error handler

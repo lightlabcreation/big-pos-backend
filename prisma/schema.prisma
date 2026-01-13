@@ -804,7 +804,7 @@ enum user_role {
 // Consumer Settings - Notification preferences for consumers
 model ConsumerSettings {
   id                  String          @id @default(uuid())
-  consumerId          String          @unique
+  consumerId          String          @unique(map: "consumerSettings_consumerId_unique")
   consumer            ConsumerProfile @relation(fields: [consumerId], references: [id])
   
   // Notification Preferences
