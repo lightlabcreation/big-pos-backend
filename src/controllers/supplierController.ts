@@ -31,6 +31,10 @@ export const createSupplier = async (req: AuthRequest, res: Response) => {
     try {
         const { name, contactPerson, phone, email, address } = req.body;
 
+        if (!name) {
+            return res.status(400).json({ error: 'Supplier name is required' });
+        }
+
         // Get wholesaler ID from authenticated user
         if (!req.user?.wholesalerProfile?.id) {
             return res.status(403).json({ error: 'Only wholesalers can create suppliers' });
@@ -38,12 +42,11 @@ export const createSupplier = async (req: AuthRequest, res: Response) => {
 
         const wholesalerId = req.user.wholesalerProfile.id;
 
-        // Check existing
         const existing = await prisma.supplier.findFirst({
             where: {
                 OR: [
-                    { name },
-                    { email: email || undefined } // Only check email if provided
+                    { name: name as string },
+                    ...(email ? [{ email: email as string }] : [])
                 ]
             }
         });

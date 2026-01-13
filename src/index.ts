@@ -20,8 +20,10 @@ const PORT = process.env.PORT || 9000;
 
 // CORS Configuration
 app.use(cors({
-  origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "https://big-pos.netlify.app", "http://localhost:5173", "http://localhost:3062", "http://localhost:9000"],
-  credentials: true
+  origin: true, // Auto-reflect origin in development, better than hardcoded list
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
 
 app.use(express.json());

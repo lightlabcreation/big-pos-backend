@@ -260,11 +260,15 @@ export const createRetailer = async (req: AuthRequest, res: Response) => {
   try {
     const { email, password, business_name, phone, address, credit_limit } = req.body;
 
+    if (!email || !password || !business_name || !phone) {
+      return res.status(400).json({ error: 'Missing required fields: email, password, business_name, and phone are required' });
+    }
+
     const existingEmail = await prisma.user.findFirst({ where: { email } });
-    if (existingEmail) return res.status(400).json({ error: `User with email ${email} already exists` });
+    if (existingEmail) return res.status(400).json({ error: `Retailer with email ${email} already exists` });
 
     const existingPhone = await prisma.user.findFirst({ where: { phone } });
-    if (existingPhone) return res.status(400).json({ error: `User with phone ${phone} already exists` });
+    if (existingPhone) return res.status(400).json({ error: `Retailer with phone ${phone} already exists` });
 
     const hashedPassword = await hashPassword(password);
 
@@ -312,11 +316,15 @@ export const createWholesaler = async (req: AuthRequest, res: Response) => {
   try {
     const { email, password, company_name, phone, address } = req.body;
 
+    if (!email || !password || !company_name || !phone) {
+      return res.status(400).json({ error: 'Missing required fields: email, password, company_name, and phone are required' });
+    }
+
     const existingEmail = await prisma.user.findFirst({ where: { email } });
-    if (existingEmail) return res.status(400).json({ error: `User with email ${email} already exists` });
+    if (existingEmail) return res.status(400).json({ error: `Wholesaler with email ${email} already exists` });
 
     const existingPhone = await prisma.user.findFirst({ where: { phone } });
-    if (existingPhone) return res.status(400).json({ error: `User with phone ${phone} already exists` });
+    if (existingPhone) return res.status(400).json({ error: `Wholesaler with phone ${phone} already exists` });
 
     const hashedPassword = await hashPassword(password);
 
@@ -491,7 +499,7 @@ export const deleteCategory = async (req: AuthRequest, res: Response) => {
 export const updateRetailer = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params; // RetailerProfile ID
-    const { business_name, phone, address, credit_limit, status } = req.body;
+    const { business_name, email, phone, address, credit_limit, status } = req.body;
 
     const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
     if (!retailer) return res.status(404).json({ error: 'Retailer not found' });
@@ -500,14 +508,24 @@ export const updateRetailer = async (req: AuthRequest, res: Response) => {
     if (phone) {
       const existingUser = await prisma.user.findFirst({
         where: {
-          AND: [
-            { id: { not: retailer.userId } },
-            { phone }
-          ]
+          phone,
+          id: { not: retailer.userId }
         }
       });
       if (existingUser) {
-        return res.status(400).json({ error: `Phone ${phone} is already in use` });
+        return res.status(400).json({ error: `Phone ${phone} is already in use by another account` });
+      }
+    }
+
+    if (email) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          email,
+          id: { not: retailer.userId }
+        }
+      });
+      if (existingUser) {
+        return res.status(400).json({ error: `Email ${email} is already in use by another account` });
       }
     }
 
@@ -604,7 +622,7 @@ export const verifyWholesaler = async (req: AuthRequest, res: Response) => {
 export const updateWholesaler = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { company_name, phone, address, status } = req.body;
+    const { company_name, email, phone, address, status } = req.body;
 
     const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
     if (!wholesaler) return res.status(404).json({ error: 'Wholesaler not found' });
@@ -613,14 +631,24 @@ export const updateWholesaler = async (req: AuthRequest, res: Response) => {
     if (phone) {
       const existingUser = await prisma.user.findFirst({
         where: {
-          AND: [
-            { id: { not: wholesaler.userId } },
-            { phone }
-          ]
+          phone,
+          id: { not: wholesaler.userId }
         }
       });
       if (existingUser) {
-        return res.status(400).json({ error: `Phone ${phone} is already in use` });
+        return res.status(400).json({ error: `Phone ${phone} is already in use by another account` });
+      }
+    }
+
+    if (email) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          email,
+          id: { not: wholesaler.userId }
+        }
+      });
+      if (existingUser) {
+        return res.status(400).json({ error: `Email ${email} is already in use by another account` });
       }
     }
 
@@ -757,14 +785,14 @@ export const createCustomer = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Email and Phone are required' });
     }
 
-    const existingEmail = await prisma.user.findFirst({ where: { email } });
+    const existingEmail = await prisma.user.findFirst({ where: { email: email as string } });
     if (existingEmail) {
-      return res.status(400).json({ error: `User with email ${email} already exists` });
+      return res.status(400).json({ error: `Customer with email ${email} already exists` });
     }
 
-    const existingPhone = await prisma.user.findFirst({ where: { phone } });
+    const existingPhone = await prisma.user.findFirst({ where: { phone: phone as string } });
     if (existingPhone) {
-      return res.status(400).json({ error: `User with phone ${phone} already exists` });
+      return res.status(400).json({ error: `Customer with phone ${phone} already exists` });
     }
 
     // const exists = await prisma.user.findFirst({

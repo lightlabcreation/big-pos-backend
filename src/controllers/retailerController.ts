@@ -315,9 +315,9 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       // Check if already processed (optional, but good practice to avoid duplicates)
       // For now, we allow re-importing which might duplicate or fail on uniqueness. 
       // Let's check if products with this invoiceNumber already exist.
-      const existing = await prisma.product.findFirst({
+      const existing = invoice_number ? await prisma.product.findFirst({
         where: { retailerId: retailerProfile.id, invoiceNumber: invoice_number }
-      });
+      }) : null;
       if (existing) {
         return res.status(400).json({ error: 'Invoice already imported' });
       }
@@ -666,7 +666,7 @@ export const scanBarcode = async (req: AuthRequest, res: Response) => {
     const product = await prisma.product.findFirst({
       where: {
         retailerId: retailerProfile.id,
-        barcode: barcode,
+        barcode: barcode as string,
         status: 'active'
       }
     });
@@ -741,7 +741,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       if (payment_method === 'wallet') {
         if (!customer_phone) throw new Error('Customer phone required for wallet payment');
         const consumer = await prisma.consumerProfile.findFirst({
-          where: { user: { phone: customer_phone } }
+          where: { user: { phone: customer_phone as string } }
         });
 
         if (!consumer) throw new Error('Consumer profile not found for this phone number');
