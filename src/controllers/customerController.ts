@@ -464,14 +464,15 @@ export const getNotificationPreferences = async (req: AuthRequest, res: Response
         }
 
         // Create default settings if none exist
-        let settings = (consumerProfile as any).settings;
+        let settings = consumerProfile.settings;
         if (!settings) {
-            settings = await (prisma as any).consumerSettings.create({
+            settings = await prisma.consumerSettings.create({
                 data: {
                     consumerId: consumerProfile.id,
                     pushNotifications: true,
                     emailNotifications: true,
-                    smsNotifications: false
+                    smsNotifications: false,
+                    updatedAt: new Date()
                 }
             });
         }
@@ -511,18 +512,22 @@ export const updateNotificationPreferences = async (req: AuthRequest, res: Respo
         if (email_notifications !== undefined) updateData.emailNotifications = email_notifications;
         if (sms_notifications !== undefined) updateData.smsNotifications = sms_notifications;
 
-        if ((consumerProfile as any).settings) {
+        if (consumerProfile.settings) {
             // Update existing settings
-            settings = await (prisma as any).consumerSettings.update({
-                where: { id: (consumerProfile as any).settings.id },
-                data: updateData
+            settings = await prisma.consumerSettings.update({
+                where: { id: consumerProfile.settings.id },
+                data: {
+                    ...updateData,
+                    updatedAt: new Date()
+                }
             });
         } else {
             // Create new settings
-            settings = await (prisma as any).consumerSettings.create({
+            settings = await prisma.consumerSettings.create({
                 data: {
                     consumerId: consumerProfile.id,
-                    ...updateData
+                    ...updateData,
+                    updatedAt: new Date()
                 }
             });
         }
