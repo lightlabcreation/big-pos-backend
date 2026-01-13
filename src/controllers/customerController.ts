@@ -417,7 +417,7 @@ export const getRecentActivity = async (req: AuthRequest, res: Response) => {
         recentOrders.forEach(order => {
             const timeAgo = getTimeAgo(order.createdAt);
             activities.push({
-                action: `${order.orderType === 'gas' ? 'Gas topup' : 'Shop'} order #${order.id.substring(0, 8)}`,
+                action: `${order.orderType === 'gas' ? 'Gas topup' : 'Shop'} order #${order.id.toString().substring(0, 8)}`,
                 time: timeAgo,
                 type: 'order',
                 created_at: order.createdAt
@@ -573,7 +573,7 @@ export const getReferralCode = async (req: AuthRequest, res: Response) => {
 
         // Generate referral code from user ID (deterministic)
         // Format: BIG + last 6 chars of user ID in uppercase
-        const referralCode = 'BIG' + user.id.slice(-6).toUpperCase();
+        const referralCode = 'BIG' + user.id.toString().slice(-6).toUpperCase();
 
         res.json({
             success: true,

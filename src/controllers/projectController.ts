@@ -106,7 +106,7 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
     }
 
     const project = await prisma.project.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: {
         manager: { include: { user: true } },
         tasks: {
@@ -127,7 +127,7 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
     }
 
     // Check if employee has access to this project
-    const isMember = project.projectMembers.some(pm => pm.employeeId === employeeProfile.id);
+    const isMember = (project as any).projectMembers.some((pm: any) => pm.employeeId === employeeProfile.id);
     const isManager = project.managerId === employeeProfile.id;
 
     if (!isMember && !isManager) {
@@ -135,14 +135,14 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
     }
 
     // Get employee's role
-    const memberRecord = project.projectMembers.find(pm => pm.employeeId === employeeProfile.id);
+    const memberRecord = (project as any).projectMembers.find((pm: any) => pm.employeeId === employeeProfile.id);
     const myRole = isManager ? 'Project Manager' : (memberRecord?.role || 'Team Member');
 
     // Format response
-    const totalTasks = project.tasks.length;
-    const completedTasks = project.tasks.filter(t => t.status === 'COMPLETED').length;
-    const totalHours = project.tasks.reduce((sum, t) => sum + (t.actualHours || 0), 0);
-    const estimatedHours = project.tasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0);
+    const totalTasks = (project as any).tasks.length;
+    const completedTasks = (project as any).tasks.filter((t: any) => t.status === 'COMPLETED').length;
+    const totalHours = (project as any).tasks.reduce((sum: number, t: any) => sum + (t.actualHours || 0), 0);
+    const estimatedHours = (project as any).tasks.reduce((sum: number, t: any) => sum + (t.estimatedHours || 0), 0);
 
     const formattedProject = {
       id: project.id,
@@ -156,17 +156,17 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
       dueDate: project.dueDate,
       client: project.client,
       manager: {
-        id: project.manager.id,
-        name: project.manager.user.name,
-        email: project.manager.user.email
+        id: (project as any).manager.id,
+        name: (project as any).manager.user.name,
+        email: (project as any).manager.user.email
       },
       myRole: myRole,
-      teamSize: project.projectMembers.length,
+      teamSize: (project as any).projectMembers.length,
       tasksCompleted: completedTasks,
       totalTasks: totalTasks,
       hoursSpent: totalHours,
       estimatedHours: estimatedHours,
-      tasks: project.tasks.map(task => ({
+      tasks: (project as any).tasks.map((task: any) => ({
         id: task.id,
         title: task.title,
         description: task.description,
@@ -179,7 +179,7 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
         estimatedHours: task.estimatedHours,
         actualHours: task.actualHours
       })),
-      team: project.projectMembers.map(pm => ({
+      team: (project as any).projectMembers.map((pm: any) => ({
         id: pm.employeeProfile.id,
         name: pm.employeeProfile.user.name,
         email: pm.employeeProfile.user.email,
@@ -252,7 +252,7 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const task = await prisma.task.findUnique({
-      where: { id }
+      where: { id: Number(id) }
     });
 
     if (!task) {
@@ -265,7 +265,7 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const updatedTask = await prisma.task.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         status: status ? status.toUpperCase() : undefined,
         actualHours: actualHours !== undefined ? actualHours : undefined

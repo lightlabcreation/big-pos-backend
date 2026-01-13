@@ -112,7 +112,7 @@ export const removeGasMeter = async (req: AuthRequest, res: Response) => {
         }
 
         const meter = await prisma.gasMeter.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
 
         if (!meter || meter.consumerId !== consumerProfile.id) {
@@ -121,7 +121,7 @@ export const removeGasMeter = async (req: AuthRequest, res: Response) => {
 
         // Soft delete
         await prisma.gasMeter.update({
-            where: { id },
+            where: { id: Number(id) },
             data: { status: 'removed' }
         });
 
@@ -219,7 +219,7 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 type: 'debit',
                 amount,
                 description: `Gas topup for meter ${meter_number}`,
-                reference: order.id,
+                reference: order.id.toString(),
                 status: 'completed'
             }
         });
@@ -231,7 +231,7 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 consumerId: consumerProfile.id,
                 units: rewardUnits,
                 source: 'purchase',
-                reference: order.id
+                reference: order.id.toString()
             }
         });
 
@@ -504,7 +504,7 @@ export const getOrderDetails = async (req: AuthRequest, res: Response) => {
 
         const order = await prisma.customerOrder.findFirst({
             where: {
-                id,
+                id: Number(id),
                 consumerId: consumerProfile.id
             }
         });

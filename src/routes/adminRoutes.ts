@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getDashboard,
   getCustomers,
+  getCustomer,
   createCustomer,
   updateCustomer,
   deleteCustomer,
@@ -41,7 +42,8 @@ import {
   getRevenueReport,
   getSystemConfig,
   updateSystemConfig,
-  getReports
+  getReports,
+  updateCustomerStatus
 } from '../controllers/adminController';
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../controllers/supplierController';
 import { getJobs, createJob, updateJob, deleteJob, getApplications, createApplication, updateApplicationStatus } from '../controllers/recruitmentController';
@@ -56,9 +58,11 @@ router.get('/dashboard', getDashboard);
 
 // Customer Routes
 router.get('/customers', getCustomers);
+router.get('/customers/:id', getCustomer);
 router.post('/customers', createCustomer);
 router.put('/customers/:id', updateCustomer);
 router.delete('/customers/:id', deleteCustomer);
+router.put('/customers/:id/status', updateCustomerStatus);
 
 // Retailer Routes
 router.get('/retailers', getRetailers);

@@ -244,6 +244,28 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getCustomer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const customer = await prisma.consumerProfile.findUnique({
+      where: { id: Number(id) },
+      include: {
+        user: true,
+        wallets: true,
+        nfcCards: true
+      }
+    });
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found' });
+    }
+
+    res.json({ success: true, customer });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
     const retailers = await prisma.retailerProfile.findMany({
@@ -361,7 +383,8 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
       include: {
         consumerProfile: {
           include: {
-            user: true
+            user: true,
+            wallets: true // Include wallets to access transactions
           }
         }
       },
@@ -370,21 +393,60 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
       }
     });
 
-    const formattedLoans = loans.map(loan => ({
-      id: loan.id,
-      user_id: loan.consumerProfile?.userId,
-      user_name: loan.consumerProfile?.fullName || loan.consumerProfile?.user?.name || 'Unknown',
-      user_type: 'retailer', // Defaulting to retailer for UI categorization
-      amount: loan.amount,
-      interest_rate: 5, // Default assumption
-      duration_months: 1,
-      monthly_payment: loan.amount,
-      total_repayable: loan.amount,
-      amount_paid: 0,
-      amount_remaining: loan.amount,
-      status: loan.status,
-      created_at: loan.createdAt,
-      due_date: loan.dueDate
+    // Calculate payment progress for each loan
+    const formattedLoans = await Promise.all(loans.map(async (loan) => {
+      // Get all repayment transactions for this loan
+      // Check both 'loan_repayment_replenish' (dashboard wallet payments) 
+      // and 'debit' from credit_wallet (credit wallet payments)
+      const repaymentTransactions = await prisma.walletTransaction.findMany({
+        where: {
+          reference: loan.id.toString(),
+          OR: [
+            { type: 'loan_repayment_replenish' },
+            { 
+              type: 'debit',
+              description: { contains: 'Loan Repayment' }
+            }
+          ]
+        }
+      });
+
+      // Calculate total amount paid
+      const amountPaid = repaymentTransactions.reduce((sum, txn) => {
+        // For 'loan_repayment_replenish', amount is positive
+        // For 'debit', amount is negative, so we need absolute value
+        return sum + Math.abs(txn.amount);
+      }, 0);
+
+      const totalRepayable = loan.amount; // Simplified: no interest for now
+      const amountRemaining = Math.max(0, totalRepayable - amountPaid);
+
+      // Update loan status if fully paid
+      let loanStatus = loan.status;
+      if (amountPaid >= totalRepayable && loan.status !== 'repaid') {
+        await prisma.loan.update({
+          where: { id: loan.id },
+          data: { status: 'repaid' }
+        });
+        loanStatus = 'repaid';
+      }
+
+      return {
+        id: loan.id,
+        user_id: loan.consumerProfile?.userId,
+        user_name: loan.consumerProfile?.fullName || loan.consumerProfile?.user?.name || 'Unknown',
+        user_type: 'consumer',
+        amount: loan.amount,
+        interest_rate: 5,
+        duration_months: 1,
+        monthly_payment: loan.amount,
+        total_repayable: totalRepayable,
+        amount_paid: amountPaid,
+        amount_remaining: amountRemaining,
+        status: loanStatus,
+        created_at: loan.createdAt,
+        due_date: loan.dueDate
+      };
     }));
 
     res.json({ success: true, loans: formattedLoans });
@@ -471,7 +533,7 @@ export const updateCategory = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { name, code, description, isActive } = req.body;
     const category = await prisma.category.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { name, code, description, isActive }
     });
     res.json({ success: true, category, message: 'Category updated successfully' });
@@ -484,7 +546,7 @@ export const updateCategory = async (req: AuthRequest, res: Response) => {
 export const deleteCategory = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    await prisma.category.delete({ where: { id } });
+    await prisma.category.delete({ where: { id: Number(id) } });
     res.json({ success: true, message: 'Category deleted successfully' });
   } catch (error: any) {
     console.error('Delete Category Error:', error);
@@ -501,7 +563,7 @@ export const updateRetailer = async (req: AuthRequest, res: Response) => {
     const { id } = req.params; // RetailerProfile ID
     const { business_name, email, phone, address, credit_limit, status } = req.body;
 
-    const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(id) } });
     if (!retailer) return res.status(404).json({ error: 'Retailer not found' });
 
     // Check for duplicate phone on OTHER users
@@ -530,7 +592,7 @@ export const updateRetailer = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.retailerProfile.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         shopName: business_name,
         address,
@@ -559,10 +621,10 @@ export const updateRetailer = async (req: AuthRequest, res: Response) => {
 export const deleteRetailer = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(id) } });
     if (retailer) {
       // Delete profile first to satisfy FK
-      await prisma.retailerProfile.delete({ where: { id } });
+      await prisma.retailerProfile.delete({ where: { id: Number(id) } });
       // Then delete user
       await prisma.user.delete({ where: { id: retailer.userId } });
     }
@@ -578,12 +640,12 @@ export const verifyRetailer = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     // Check if retailer exists
-    const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(id) } });
     if (!retailer) return res.status(404).json({ success: false, message: 'Retailer not found' });
 
     // Update isVerified status
     await prisma.retailerProfile.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { isVerified: true }
     });
 
@@ -599,12 +661,12 @@ export const verifyWholesaler = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
 
     // Check if wholesaler exists
-    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(id) } });
     if (!wholesaler) return res.status(404).json({ success: false, message: 'Wholesaler not found' });
 
     // Update isVerified status
     await prisma.wholesalerProfile.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { isVerified: true }
     });
 
@@ -624,7 +686,7 @@ export const updateWholesaler = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { company_name, email, phone, address, status } = req.body;
 
-    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(id) } });
     if (!wholesaler) return res.status(404).json({ error: 'Wholesaler not found' });
 
     // Check for duplicate phone on OTHER users
@@ -653,7 +715,7 @@ export const updateWholesaler = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.wholesalerProfile.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         companyName: company_name,
         address
@@ -681,10 +743,10 @@ export const updateWholesaler = async (req: AuthRequest, res: Response) => {
 export const deleteWholesaler = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(id) } });
     if (wholesaler) {
       // Delete profile first to satisfy FK
-      await prisma.wholesalerProfile.delete({ where: { id } });
+      await prisma.wholesalerProfile.delete({ where: { id: Number(id) } });
       // Then delete user
       await prisma.user.delete({ where: { id: wholesaler.userId } });
     }
@@ -701,7 +763,7 @@ export const updateRetailerStatus = async (req: AuthRequest, res: Response) => {
     const { isActive, status } = req.body;
     console.log(`Updating Retailer Status - ID: ${id}, isActive: ${isActive}, status: ${status}`);
 
-    const retailer = await prisma.retailerProfile.findUnique({ where: { id } });
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(id) } });
     if (!retailer) {
       console.log(`Retailer NOT FOUND for ID: ${id}`);
       return res.status(404).json({ error: 'Retailer not found' });
@@ -740,7 +802,7 @@ export const updateWholesalerStatus = async (req: AuthRequest, res: Response) =>
     const { isActive, status } = req.body;
     console.log(`Updating Wholesaler Status - ID: ${id}, isActive: ${isActive}, status: ${status}`);
 
-    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id } });
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(id) } });
     if (!wholesaler) {
       console.log(`Wholesaler NOT FOUND for ID: ${id}`);
       return res.status(404).json({ error: 'Wholesaler not found' });
@@ -840,7 +902,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
     const { id } = req.params; // ConsumerProfile ID
     const { firstName, lastName, email, phone, status } = req.body;
 
-    const profile = await prisma.consumerProfile.findUnique({ where: { id } });
+    const profile = await prisma.consumerProfile.findUnique({ where: { id: Number(id) } });
     if (!profile) return res.status(404).json({ error: 'Customer not found' });
 
     // Check if email/phone is taken by ANOTHER user
@@ -875,7 +937,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
     });
 
     await prisma.consumerProfile.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { fullName: `${firstName} ${lastName}` }
     });
 
@@ -886,11 +948,78 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const updateCustomerStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params; // ConsumerProfile ID or User ID? 
+    // The frontend passes record.user.id which is the USER ID.
+    // Let's assume the ID passed is the USER ID because customer status is on the User model.
+    // However, consistency suggests we might pass the ConsumerProfile ID and look up the user.
+    // In apiService.ts: api.put(`/admin/customers/${id}/status`, data)
+    // The call in CustomerManagementPage.tsx is updateCustomerStatus(record.user.id, newStatus).
+    // record.user.id IS the User ID.
+    // But RESTfully, /admin/customers/:id Usually implies ConsumerProfile ID.
+    // Let's check updateWholesalerStatus. It takes params.id (WholesalerProfile ID) and finds profile then user.
+    // So for consistency, the frontend SHOULD pass ConsumerProfile ID, and backend looks up User.
+    // BUT current frontend code passes `record.user.id`.
+    // I will support BOTH or check if the ID exists as a ConsumerProfile first.
+    // Actually, to be consistent with getCustomers returning ConsumerProfiles, :id should be ConsumerProfile ID.
+    // I will change the frontend to pass record.id (ConsumerProfile ID) instead of record.user.id.
+    // Backend implementation:
+    const { status } = req.body;
+    // Map status string to boolean if needed, or expect boolean 'isActive'
+    // apiService sends: { status: string } from definition?
+    // apiService definition: updateCustomerStatus: (id: string, data: { status: string })
+    // usage in frontend: await adminApi.updateCustomerStatus(record.user.id, newStatus); 
+    // Wait, newStatus is boolean.
+    // Frontend: const newStatus = !record.user?.isActive; ... updateCustomerStatus(..., newStatus)
+    // apiService expects object? No, logic in apiService: api.put(..., data). 
+    // If I pass boolean as data, it sends request body as boolean? No, must be object.
+    // Frontend usage: adminApi.updateCustomerStatus(record.user.id, newStatus)
+    // API Service: updateCustomerStatus: (id, data) => api.put(..., data)
+    // So frontend is passing a boolean where an object is expected? 
+    // Let's check frontend again.
+    // Frontend: await adminApi.updateCustomerStatus(record.user.id, newStatus);
+    // apiService: updateCustomerStatus: (id: string, data: { status: string }) => ... 
+    // Wait, the interface in apiService says it takes `data: { status: string }` but the implementation just passes `data`.
+    // So if frontend passes a boolean, the body is just `true` or `false`.
+    // I should fix the frontend to pass `{ status: newStatus ? 'active' : 'inactive' }` or `{ isActive: newStatus }`.
+    // And backend should handle it.
+    
+    // For now, let's look for profile by ID.
+    
+    const profileId = Number(id);
+    let profile = await prisma.consumerProfile.findUnique({ where: { id: profileId } });
+    
+    if (!profile) {
+        // Fallback: maybe it IS a user ID?
+        const user = await prisma.user.findUnique({ where: { id: profileId } });
+        if (!user) return res.status(404).json({ error: 'Customer not found' });
+        
+        // It was a user ID
+        await prisma.user.update({
+            where: { id: profileId },
+            data: { isActive: req.body.isActive ?? (req.body.status === 'active') }
+        });
+    } else {
+        // It was a profile ID
+        await prisma.user.update({
+            where: { id: profile.userId },
+            data: { isActive: req.body.isActive ?? (req.body.status === 'active') }
+        });
+    }
+
+    res.json({ success: true, message: 'Customer status updated' });
+  } catch (error: any) {
+    console.error('Update Customer Status Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const deleteCustomer = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const profile = await prisma.consumerProfile.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { wallets: true }
     });
 
@@ -905,32 +1034,32 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
         where: { walletId: { in: profile.wallets.map(w => w.id) } }
       }),
       // 2. Delete Wallets
-      prisma.wallet.deleteMany({ where: { consumerId: id } }),
+      prisma.wallet.deleteMany({ where: { consumerId: Number(id) } }),
       // 3. Delete Gas Topups and Rewards
-      prisma.gasTopup.deleteMany({ where: { consumerId: id } }),
-      prisma.gasReward.deleteMany({ where: { consumerId: id } }),
+      prisma.gasTopup.deleteMany({ where: { consumerId: Number(id) } }),
+      prisma.gasReward.deleteMany({ where: { consumerId: Number(id) } }),
       // 4. Delete Gas Meters
-      prisma.gasMeter.deleteMany({ where: { consumerId: id } }),
+      prisma.gasMeter.deleteMany({ where: { consumerId: Number(id) } }),
       // 5. Delete Customer Orders
-      prisma.customerOrder.deleteMany({ where: { consumerId: id } }),
+      prisma.customerOrder.deleteMany({ where: { consumerId: Number(id) } }),
       // 6. Delete Loans
-      prisma.loan.deleteMany({ where: { consumerId: id } }),
+      prisma.loan.deleteMany({ where: { consumerId: Number(id) } }),
       // 7. Unlink or delete NFC cards (unlinking is safer if cards are reusable)
       prisma.nfcCard.updateMany({
-        where: { consumerId: id },
+        where: { consumerId: Number(id) },
         data: { consumerId: null, status: 'inactive' }
       }),
       // 8. Delete Sales (if they belong to this consumer)
-      prisma.sale.deleteMany({ where: { consumerId: id } }),
+      prisma.sale.deleteMany({ where: { consumerId: Number(id) } }),
       // 9. Delete Settings
-      prisma.consumerSettings.deleteMany({ where: { consumerId: id } }),
+      prisma.consumerSettings.deleteMany({ where: { consumerId: Number(id) } }),
       // 10. Delete Messages and Notifications
       prisma.message.deleteMany({
         where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
       }),
       prisma.notification.deleteMany({ where: { userId: profile.userId } }),
       // 11. Delete the profile itself
-      prisma.consumerProfile.delete({ where: { id } }),
+      prisma.consumerProfile.delete({ where: { id: Number(id) } }),
       // 12. Finally delete the User record
       prisma.user.delete({ where: { id: profile.userId } })
     ]);
@@ -1030,7 +1159,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     } = req.body;
 
     const product = await prisma.product.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         name,
         description,
@@ -1059,7 +1188,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 export const deleteProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    await prisma.product.delete({ where: { id } });
+    await prisma.product.delete({ where: { id: Number(id) } });
     res.json({ success: true, message: 'Product deleted successfully' });
   } catch (error: any) {
     console.error('Delete Product Error:', error);
@@ -1210,7 +1339,7 @@ export const updateEmployee = async (req: AuthRequest, res: Response) => {
 
     // Find profile first
     const profile = await prisma.employeeProfile.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { user: true }
     });
 
@@ -1230,7 +1359,7 @@ export const updateEmployee = async (req: AuthRequest, res: Response) => {
         }
       }),
       prisma.employeeProfile.update({
-        where: { id },
+        where: { id: Number(id) },
         data: {
           department,
           position,
@@ -1255,7 +1384,7 @@ export const deleteEmployee = async (req: AuthRequest, res: Response) => {
     const { id } = req.params; // EmployeeProfile ID
 
     const profile = await prisma.employeeProfile.findUnique({
-      where: { id }
+      where: { id: Number(id) }
     });
 
     if (!profile) {
@@ -1286,7 +1415,7 @@ export const approveLoan = async (req: AuthRequest, res: Response) => {
 
     const result = await prisma.$transaction(async (prisma) => {
       const loan = await prisma.loan.findUnique({
-        where: { id },
+        where: { id: Number(id) },
         include: { consumerProfile: true }
       });
 
@@ -1295,7 +1424,7 @@ export const approveLoan = async (req: AuthRequest, res: Response) => {
 
       // 1. Update Loan status
       const updatedLoan = await prisma.loan.update({
-        where: { id },
+        where: { id: Number(id) },
         data: {
           status: 'approved',
           dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
@@ -1332,7 +1461,7 @@ export const approveLoan = async (req: AuthRequest, res: Response) => {
           amount: loan.amount,
           description: `Loan Approved by Admin`,
           status: 'completed',
-          reference: loan.id
+          reference: loan.id.toString()
         }
       });
 
@@ -1351,7 +1480,7 @@ export const rejectLoan = async (req: AuthRequest, res: Response) => {
     const { reason } = req.body;
 
     const loan = await prisma.loan.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { status: 'rejected' }
     });
 
@@ -1380,7 +1509,8 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
       sector,
       cell,
       streetAddress,
-      landmark
+      landmark,
+      userId // Optional: Valid User ID passed from frontend
     } = req.body;
 
     if (!uid) return res.status(400).json({ error: 'UID is required' });
@@ -1388,11 +1518,38 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
     const existing = await prisma.nfcCard.findUnique({ where: { uid } });
     if (existing) return res.status(400).json({ error: 'NFC Card with this UID already exists' });
 
+    // Try to link to a consumer
+    let consumerId = null;
+    let finalStatus = 'available';
+
+    // 1. If userId provided explicitly
+    if (userId) {
+        const profile = await prisma.consumerProfile.findFirst({ where: { userId: userId } }); // Assuming userId is User model ID
+        if (profile) consumerId = profile.id;
+        else {
+            // Maybe it WAS the consumerProfile ID?
+             const profileById = await prisma.consumerProfile.findUnique({ where: { id: Number(userId) } });
+             if (profileById) consumerId = profileById.id;
+        }
+    } 
+    // 2. If no userId, try to match by phone
+    else if (phone) {
+        const user = await prisma.user.findFirst({ where: { phone } });
+        if (user) {
+            const profile = await prisma.consumerProfile.findUnique({ where: { userId: user.id } });
+            if (profile) consumerId = profile.id;
+        }
+    }
+
+    if (consumerId) {
+        finalStatus = 'active';
+    }
+
     const card = await prisma.nfcCard.create({
       data: {
         uid,
         pin: pin || '1234',
-        status: 'available',
+        status: finalStatus,
         balance: 0,
         cardType,
         cardholderName,
@@ -1404,11 +1561,12 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
         sector,
         cell,
         streetAddress,
-        landmark
+        landmark,
+        consumerId: consumerId
       }
     });
 
-    res.status(201).json({ success: true, card });
+    res.status(201).json({ success: true, card, message: consumerId ? 'Card registered and linked to customer' : 'Card registered successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1418,7 +1576,7 @@ export const blockNFCCard = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const card = await prisma.nfcCard.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { status: 'blocked' }
     });
     res.json({ success: true, card });
@@ -1431,7 +1589,7 @@ export const activateNFCCard = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const card = await prisma.nfcCard.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { status: 'available' }
     });
     res.json({ success: true, card });
@@ -1444,7 +1602,7 @@ export const unlinkNFCCard = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const card = await prisma.nfcCard.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { 
         consumerId: null,
         retailerId: null,

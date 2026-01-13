@@ -25,7 +25,7 @@ export const getVendor = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const vendor = await prisma.supplier.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { products: true }
         });
 
@@ -69,7 +69,7 @@ export const updateVendor = async (req: Request, res: Response) => {
         const { name, contactPerson, phone, email, address, status } = req.body;
 
         const vendor = await prisma.supplier.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 name,
                 contactPerson,
@@ -92,7 +92,7 @@ export const deleteVendor = async (req: Request, res: Response) => {
         const { id } = req.params;
 
         await prisma.supplier.delete({
-            where: { id }
+            where: { id: Number(id) }
         });
 
         res.json({ success: true, message: 'Vendor deleted successfully' });

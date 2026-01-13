@@ -64,7 +64,7 @@ export const updateJob = async (req: AuthRequest, res: Response) => {
         if (data.salaryMax) data.salaryMax = Number(data.salaryMax);
 
         const job = await prisma.jobPosting.update({
-            where: { id },
+            where: { id: Number(id) },
             data
         });
 
@@ -78,7 +78,7 @@ export const updateJob = async (req: AuthRequest, res: Response) => {
 export const deleteJob = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        await prisma.jobPosting.delete({ where: { id } });
+        await prisma.jobPosting.delete({ where: { id: Number(id) } });
         res.json({ success: true, message: 'Job deleted' });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -141,7 +141,7 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response) =
         const { status } = req.body;
 
         const application = await prisma.jobApplication.update({
-            where: { id },
+            where: { id: Number(id) },
             data: { status }
         });
 

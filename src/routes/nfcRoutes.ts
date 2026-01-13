@@ -6,7 +6,8 @@ import {
     setCardPin,
     setPrimaryCard,
     updateCardNickname,
-    getCardOrders
+    getCardOrders,
+    topUpCard
 } from '../controllers/nfcController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -22,5 +23,6 @@ router.put('/cards/:id/pin', setCardPin);
 router.put('/cards/:id/primary', setPrimaryCard);
 router.put('/cards/:id/nickname', updateCardNickname);
 router.get('/cards/:cardId/orders', getCardOrders);
+router.post('/cards/:cardId/topup', topUpCard);
 
 export default router;

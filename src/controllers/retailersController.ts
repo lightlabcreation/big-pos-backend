@@ -118,7 +118,7 @@ export const getRetailerById = async (req: AuthRequest, res: Response) => {
 
         // Get retailer with all details
         const retailer = await prisma.retailerProfile.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: {
                 user: true,
                 credit: true,
@@ -135,7 +135,7 @@ export const getRetailerById = async (req: AuthRequest, res: Response) => {
         // Calculate total revenue from orders with this wholesaler
         const orders = await prisma.order.findMany({
             where: {
-                retailerId: id,
+                retailerId: Number(id),
                 wholesalerId: wholesalerProfile.id
             }
         });
@@ -170,7 +170,7 @@ export const getRetailerOrdersById = async (req: AuthRequest, res: Response) => 
 
         const orders = await prisma.order.findMany({
             where: {
-                retailerId: id,
+                retailerId: Number(id),
                 wholesalerId: wholesalerProfile.id
             },
             include: {
@@ -185,7 +185,7 @@ export const getRetailerOrdersById = async (req: AuthRequest, res: Response) => 
         // Transform to match frontend expectations
         const transformedOrders = orders.map(order => ({
             id: order.id,
-            orderNumber: `ORD-${order.id.substring(0, 8).toUpperCase()}`,
+            orderNumber: `ORD-${order.id.toString().substring(0, 8).toUpperCase()}`,
             totalAmount: order.totalAmount,
             status: order.status,
             paymentType: 'credit', // Default, can be enhanced
@@ -234,7 +234,7 @@ export const getSupplierOrders = async (req: AuthRequest, res: Response) => {
         const orders = payments.map(payment => ({
             id: payment.id,
             supplierName: payment.supplier.name,
-            invoiceNumber: payment.reference || `PAY-${payment.id.substring(0, 8)}`,
+            invoiceNumber: payment.reference || `PAY-${payment.id.toString().substring(0, 8)}`,
             totalAmount: payment.amount,
             paymentStatus: payment.status as 'paid' | 'pending' | 'partial',
             itemsCount: 0, // Not tracked in current schema
@@ -374,7 +374,7 @@ export const approveCreditRequest = async (req: AuthRequest, res: Response) => {
         const { id } = req.params;
 
         const creditRequest = await prisma.creditRequest.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 status: 'approved',
                 reviewedAt: new Date()
@@ -411,7 +411,7 @@ export const rejectCreditRequest = async (req: AuthRequest, res: Response) => {
         const { reason } = req.body;
 
         const creditRequest = await prisma.creditRequest.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 status: 'rejected',
                 reviewedAt: new Date(),
@@ -454,7 +454,7 @@ export const updateRetailerCreditLimit = async (req: AuthRequest, res: Response)
 
         // Get existing credit record
         const existingCredit = await prisma.retailerCredit.findUnique({
-            where: { retailerId: id }
+            where: { retailerId: Number(id) }
         });
 
         let credit;
@@ -464,7 +464,7 @@ export const updateRetailerCreditLimit = async (req: AuthRequest, res: Response)
             const newAvailableCredit = existingCredit.availableCredit + limitDifference;
 
             credit = await prisma.retailerCredit.update({
-                where: { retailerId: id },
+                where: { retailerId: Number(id) },
                 data: {
                     creditLimit: newLimit,
                     availableCredit: newAvailableCredit
@@ -474,7 +474,7 @@ export const updateRetailerCreditLimit = async (req: AuthRequest, res: Response)
             // Create new credit record
             credit = await prisma.retailerCredit.create({
                 data: {
-                    retailerId: id,
+                    retailerId: Number(id),
                     creditLimit: newLimit,
                     availableCredit: newLimit,
                     usedCredit: 0

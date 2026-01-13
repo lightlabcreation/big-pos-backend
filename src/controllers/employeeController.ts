@@ -98,7 +98,7 @@ export const getAttendanceById = async (req: AuthRequest, res: Response) => {
     if (!employeeProfile) return res.status(404).json({ error: 'Employee not found' });
 
     const attendance = await prisma.attendance.findUnique({
-      where: { id }
+      where: { id: Number(id) },
     });
 
     if (!attendance) return res.status(404).json({ error: 'Attendance record not found' });
@@ -407,14 +407,14 @@ export const updateBillPayment = async (req: AuthRequest, res: Response) => {
     if (!employeeProfile) return res.status(404).json({ error: 'Employee not found' });
 
     const bill = await prisma.billPayment.findUnique({
-      where: { id }
+      where: { id: Number(id) }
     });
 
     if (!bill) return res.status(404).json({ error: 'Bill payment not found' });
     if (bill.employeeId !== employeeProfile.id) return res.status(403).json({ error: 'Unauthorized' });
 
     const updated = await prisma.billPayment.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         ...req.body,
         startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
@@ -439,14 +439,14 @@ export const deleteBillPayment = async (req: AuthRequest, res: Response) => {
     if (!employeeProfile) return res.status(404).json({ error: 'Employee not found' });
 
     const bill = await prisma.billPayment.findUnique({
-      where: { id }
+      where: { id: Number(id) }
     });
 
     if (!bill) return res.status(404).json({ error: 'Bill payment not found' });
     if (bill.employeeId !== employeeProfile.id) return res.status(403).json({ error: 'Unauthorized' });
 
     await prisma.billPayment.delete({
-      where: { id }
+      where: { id: Number(id) }
     });
 
     res.json({ message: 'Bill payment deleted successfully' });

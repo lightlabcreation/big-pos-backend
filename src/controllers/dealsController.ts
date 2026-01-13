@@ -52,7 +52,7 @@ export const updateDeal = async (req: AuthRequest, res: Response) => {
         if (data.expectedCloseDate) data.expectedCloseDate = new Date(data.expectedCloseDate);
 
         const deal = await prisma.deal.update({
-            where: { id },
+            where: { id: Number(id) },
             data
         });
 
@@ -66,7 +66,7 @@ export const updateDeal = async (req: AuthRequest, res: Response) => {
 export const deleteDeal = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        await prisma.deal.delete({ where: { id } });
+        await prisma.deal.delete({ where: { id: Number(id) } });
         res.json({ success: true, message: 'Deal deleted' });
     } catch (error: any) {
         res.status(500).json({ error: error.message });

@@ -158,7 +158,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     });
 
     const formattedRecentOrders = recentOrders.map(order => ({
-      id: order.id.substring(0, 8).toUpperCase(),
+      id: order.id.toString(),
       customer: order.consumerProfile?.fullName || 'Walk-in Customer',
       items: 0, // Need to fetch items count if critical
       total: order.totalAmount,
@@ -283,7 +283,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     if (invoice_number) {
       // Find the order by ID (treating invoice_number as Order ID)
       let order = await prisma.order.findUnique({
-        where: { id: invoice_number },
+        where: { id: Number(invoice_number) },
         include: {
           orderItems: {
             include: { product: true }
@@ -379,7 +379,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     const { name, description, category, price, costPrice, stock } = req.body;
 
     const product = await prisma.product.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         name,
         description,
@@ -419,10 +419,13 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 
     // Search by ID or Customer Name
     if (search) {
+      const searchNum = Number(search);
       where.OR = [
-        { id: { contains: search as string } },
         { consumer: { fullName: { contains: search as string } } }
       ];
+      if (!isNaN(searchNum)) {
+        where.OR.push({ id: searchNum });
+      }
     }
 
     const sales = await prisma.sale.findMany({
@@ -438,7 +441,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     // Map to frontend Order interface
     const formattedOrders = sales.map(sale => ({
       id: sale.id,
-      display_id: sale.id.substring(0, 8).toUpperCase(),
+      display_id: sale.id.toString(),
       customer_name: sale.consumerProfile?.fullName || 'Walk-in Customer',
       customer_phone: sale.consumerProfile?.user?.phone || 'N/A',
       customer_email: sale.consumerProfile?.user?.email,
@@ -478,7 +481,7 @@ export const getOrder = async (req: AuthRequest, res: Response) => {
 
     const sale = await prisma.sale.findFirst({
       where: {
-        id,
+        id: Number(id),
         retailerId: retailerProfile.id
       },
       include: {
@@ -493,7 +496,7 @@ export const getOrder = async (req: AuthRequest, res: Response) => {
 
     const formattedOrder = {
       id: sale.id,
-      display_id: sale.id.substring(0, 8).toUpperCase(),
+      display_id: sale.id.toString(),
       customer_name: sale.consumerProfile?.fullName || 'Walk-in Customer',
       customer_phone: sale.consumerProfile?.user?.phone || 'N/A',
       customer_email: sale.consumerProfile?.user?.email,
@@ -706,7 +709,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
     // 1. Validate items and stock
     for (const item of items) {
-      const product = await prisma.product.findUnique({ where: { id: item.product_id } });
+      const product = await prisma.product.findUnique({ where: { id: Number(item.product_id) } });
       if (!product || product.stock < item.quantity) {
         return res.status(400).json({
           error: `Insufficient stock for product: ${product?.name || item.product_id}`
@@ -766,7 +769,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
           status: 'completed',
           saleItems: {
             create: items.map((item: any) => ({
-              productId: item.product_id,
+              productId: Number(item.product_id),
               quantity: item.quantity,
               price: item.price
             }))
@@ -777,7 +780,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       // Update Stock
       for (const item of items) {
         await prisma.product.update({
-          where: { id: item.product_id },
+          where: { id: Number(item.product_id) },
           data: { stock: { decrement: item.quantity } }
         });
       }
@@ -795,7 +798,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
               amount: -total,
               description: `POS purchase at ${retailerProfile.shopName}`,
               status: 'completed',
-              reference: sale.id
+              reference: sale.id.toString()
             }
           });
         }
@@ -822,7 +825,7 @@ export const updateSaleStatus = async (req: AuthRequest, res: Response) => {
       where: { userId: req.user!.id }
     });
 
-    const currentSale = await prisma.sale.findUnique({ where: { id } });
+    const currentSale = await prisma.sale.findUnique({ where: { id: Number(id) } });
     if (!currentSale || currentSale.retailerId !== retailerProfile?.id) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -843,7 +846,7 @@ export const updateSaleStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const sale = await prisma.sale.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { status }
     });
 
@@ -1055,8 +1058,8 @@ export const getWalletTransactions = async (req: AuthRequest, res: Response) => 
       type: 'debit',
       amount: o.totalAmount,
       balance_after: 0, // Not tracked per row
-      description: `Order #${o.id.substring(0, 8)}`,
-      reference: o.id,
+      description: `Order #${o.id.toString().substring(0, 8)}`,
+      reference: o.id.toString(),
       status: 'completed',
       created_at: o.createdAt
     }));
@@ -1152,7 +1155,7 @@ export const getCreditOrders = async (req: AuthRequest, res: Response) => {
     // Map to frontend expectation
     const formattedOrders = orders.map(o => ({
       id: o.id,
-      display_id: o.id.substring(0, 8).toUpperCase(),
+      display_id: o.id.toString().substring(0, 8).toUpperCase(),
       wholesaler_name: o.wholesalerProfile?.companyName,
       total_amount: o.totalAmount,
       amount_paid: 0, // In future, check related payments
@@ -1174,7 +1177,7 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const order = await prisma.order.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { wholesalerProfile: true, orderItems: { include: { product: true } } }
     });
 
@@ -1182,15 +1185,15 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
 
     res.json({
       id: order.id,
-      display_id: order.id.substring(0, 8).toUpperCase(),
-      wholesaler_name: order.wholesalerProfile?.companyName,
+      display_id: order.id.toString().substring(0, 8).toUpperCase(),
+      wholesaler_name: (order as any).wholesalerProfile?.companyName,
       total_amount: order.totalAmount,
       amount_paid: 0,
       amount_pending: order.totalAmount,
       status: order.status,
       due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
       created_at: order.createdAt,
-      items: order.orderItems.map(i => ({
+      items: (order as any).orderItems.map((i: any) => ({
         id: i.id,
         product_name: i.product.name,
         quantity: i.quantity,
@@ -1255,7 +1258,7 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
     }
 
     // 1. Get the Order
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findUnique({ where: { id: Number(id) } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     // 2. Validate Repayment (Mock check: if amount > pending)
@@ -1313,8 +1316,9 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
 // Get Retailer Profile
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
-    const retailerProfile = await prisma.retailerProfile.findUnique({
-      where: { userId: req.user!.id },
+    const userId = Number(req.user!.id);
+    const retailerProfile: any = await prisma.retailerProfile.findUnique({
+      where: { userId: userId as any },
       include: {
         user: {
           select: {
@@ -1333,32 +1337,38 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     }
 
     const profile = {
-      // User info
-      name: retailerProfile.user.name,
-      email: retailerProfile.user.email,
-      phone: retailerProfile.user.phone,
+      // User info nested to match frontend expectation
+      user: {
+        name: retailerProfile.user?.name,
+        email: retailerProfile.user?.email,
+        phone: retailerProfile.user?.phone,
+      },
 
       // Retailer specific info
       id: retailerProfile.id,
-      shop_name: retailerProfile.shopName,
+      companyName: retailerProfile.shopName, // Frontend expects companyName
+      shopName: retailerProfile.shopName,
       address: retailerProfile.address,
-      contact_person: retailerProfile.user.name,
+      contact_person: retailerProfile.user?.name,
       is_verified: retailerProfile.isVerified,
+      tinNumber: 'TIN123456789', // Placeholder as it's not in schema yet
 
       // Default Settings
-      notifications: {
-        push: true,
-        email: true,
-        sms: true,
-        ussd: true
-      },
-      payment_settings: {
-        default_terms: 'net30',
-        accepted_methods: ['wallet', 'mobile_money', 'cash']
+      settings: {
+        notifications: {
+          push: true,
+          email: true,
+          sms: true,
+          ussd: true
+        },
+        payment_settings: {
+          default_terms: 'net30',
+          accepted_methods: ['wallet', 'mobile_money', 'cash']
+        }
       }
     };
 
-    res.json(profile);
+    res.json({ success: true, profile });
   } catch (error: any) {
     console.error('Error fetching profile:', error);
     res.status(500).json({ error: error.message });
@@ -1368,8 +1378,9 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 // Update Retailer Profile
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
+    const userId = Number(req.user!.id);
     const retailerProfile = await prisma.retailerProfile.findUnique({
-      where: { userId: req.user!.id }
+      where: { userId: userId as any }
     });
 
     if (!retailerProfile) {
@@ -1379,15 +1390,19 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     const {
       name, // User name (Contact Person)
       shop_name,
+      company_name, // Frontend sends this
       address,
       tin_number,
       email
     } = req.body;
 
+    // Use company_name if shop_name is not provided
+    const shopNameUpdate = shop_name || company_name;
+
     // Update User model if needed
     if (name || email) {
       await prisma.user.update({
-        where: { id: req.user!.id },
+        where: { id: userId as any },
         data: {
           ...(name && { name }),
           ...(email && { email })
@@ -1399,7 +1414,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     const updatedRetailer = await prisma.retailerProfile.update({
       where: { id: retailerProfile.id },
       data: {
-        ...(shop_name && { shopName: shop_name }),
+        ...(shopNameUpdate && { shopName: shopNameUpdate }),
         ...(address && { address })
         // tin_number is ignored as it's not in schema
       }
@@ -1525,7 +1540,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     const productStats = new Map<string, { name: string, quantity: number, revenue: number }>();
     salesInPeriod.forEach(sale => {
       sale.saleItems.forEach(item => {
-        const pid = item.productId;
+        const pid = item.productId.toString();
         const current = productStats.get(pid) || { name: item.product.name, quantity: 0, revenue: 0 };
         productStats.set(pid, {
           name: item.product.name,
@@ -1543,7 +1558,7 @@ export const getAnalytics = async (req: AuthRequest, res: Response) => {
     const customerStats = new Map<string, { name: string, orders: number, spent: number }>();
     salesInPeriod.forEach(sale => {
       if (sale.consumerProfile) {
-        const cid = sale.consumerId!;
+        const cid = sale.consumerId!.toString();
         const current = customerStats.get(cid) || { name: sale.consumerProfile.fullName || 'Unknown', orders: 0, spent: 0 };
         customerStats.set(cid, {
           name: sale.consumerProfile.fullName || 'Unknown',

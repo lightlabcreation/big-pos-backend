@@ -3,7 +3,7 @@ import { verifyToken } from '../utils/auth';
 
 export interface AuthRequest extends Request {
   user?: {
-    id: string;
+    id: number;
     role: string;
   };
 }
@@ -20,7 +20,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     const decoded = verifyToken(token) as any;
     
     req.user = {
-      id: decoded.id,
+      id: Number(decoded.id),
       role: decoded.role
     };
     

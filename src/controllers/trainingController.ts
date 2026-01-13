@@ -28,8 +28,8 @@ export const getCourses = async (req: AuthRequest, res: Response) => {
 
     // Format courses with enrollment info
     const courses = allCourses.map(course => {
-      const enrollment = course.enrollments[0]; // Employee can only have one enrollment per course
-      const completedLessons = enrollment ? enrollment.lessonProgress.filter(lp => lp.completed).length : 0;
+      const enrollment = (course as any).enrollments[0]; // Employee can only have one enrollment per course
+      const completedLessons = enrollment ? enrollment.lessonProgress.filter((lp: any) => lp.completed).length : 0;
 
       return {
         id: course.id,
@@ -69,7 +69,7 @@ export const getCourseById = async (req: AuthRequest, res: Response) => {
     }
 
     const course = await prisma.course.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: {
         lessons: {
           orderBy: { order: 'asc' }
@@ -87,8 +87,8 @@ export const getCourseById = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    const enrollment = course.enrollments[0];
-    const completedLessons = enrollment ? enrollment.lessonProgress.filter(lp => lp.completed).length : 0;
+    const enrollment = (course as any).enrollments[0];
+    const completedLessons = enrollment ? enrollment.lessonProgress.filter((lp: any) => lp.completed).length : 0;
 
     const formattedCourse = {
       id: course.id,
@@ -139,7 +139,7 @@ export const enrollCourse = async (req: AuthRequest, res: Response) => {
 
     // Check if course exists
     const course = await prisma.course.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { lessons: true }
     });
 
@@ -151,7 +151,7 @@ export const enrollCourse = async (req: AuthRequest, res: Response) => {
     const existingEnrollment = await prisma.courseEnrollment.findUnique({
       where: {
         courseId_employeeId: {
-          courseId: id,
+          courseId: Number(id),
           employeeId: employeeProfile.id
         }
       }
@@ -164,7 +164,7 @@ export const enrollCourse = async (req: AuthRequest, res: Response) => {
     // Create enrollment
     const enrollment = await prisma.courseEnrollment.create({
       data: {
-        courseId: id,
+        courseId: Number(id),
         employeeId: employeeProfile.id,
         status: 'NOT_STARTED'
       }
@@ -202,7 +202,7 @@ export const updateLessonProgress = async (req: AuthRequest, res: Response) => {
 
     // Find the lesson
     const lesson = await prisma.lesson.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { course: true }
     });
 
@@ -233,7 +233,7 @@ export const updateLessonProgress = async (req: AuthRequest, res: Response) => {
       where: {
         enrollmentId_lessonId: {
           enrollmentId: enrollment.id,
-          lessonId: id
+          lessonId: Number(id)
         }
       }
     });
@@ -242,7 +242,7 @@ export const updateLessonProgress = async (req: AuthRequest, res: Response) => {
       lessonProgress = await prisma.lessonProgress.create({
         data: {
           enrollmentId: enrollment.id,
-          lessonId: id,
+          lessonId: Number(id),
           completed: true,
           completedAt: new Date()
         }

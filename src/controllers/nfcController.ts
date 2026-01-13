@@ -28,7 +28,8 @@ export const getMyCards = async (req: AuthRequest, res: Response) => {
             is_primary: index === 0, // Assume first card is primary for now
             linked_at: card.createdAt,
             last_used: card.updatedAt,
-            nickname: `NFC Card (${card.uid.slice(-4)})`
+            nickname: `NFC Card (${card.uid.slice(-4)})`,
+            balance: card.balance || 0, // Add balance
         }));
 
         res.json({
@@ -125,7 +126,7 @@ export const unlinkCard = async (req: AuthRequest, res: Response) => {
         }
 
         const card = await prisma.nfcCard.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
 
         if (!card || card.consumerId !== consumerProfile.id) {
@@ -134,7 +135,7 @@ export const unlinkCard = async (req: AuthRequest, res: Response) => {
 
         // Unlink by removing consumerId
         await prisma.nfcCard.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 consumerId: null,
                 status: 'inactive'
@@ -168,7 +169,7 @@ export const setCardPin = async (req: AuthRequest, res: Response) => {
         }
 
         const card = await prisma.nfcCard.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
 
         if (!card || card.consumerId !== consumerProfile.id) {
@@ -180,7 +181,7 @@ export const setCardPin = async (req: AuthRequest, res: Response) => {
         }
 
         await prisma.nfcCard.update({
-            where: { id },
+            where: { id: Number(id) },
             data: { pin: new_pin }
         });
 
@@ -237,7 +238,7 @@ export const getCardOrders = async (req: AuthRequest, res: Response) => {
 
         // Verify card ownership
         const card = await prisma.nfcCard.findUnique({
-            where: { id: cardId }
+            where: { id: Number(cardId) }
         });
 
         if (!card || card.consumerId !== consumerProfile.id) {
@@ -270,7 +271,7 @@ export const getCardOrders = async (req: AuthRequest, res: Response) => {
         // Format orders for frontend
         const formattedOrders = sales.map(sale => ({
             id: sale.id,
-            order_number: `ORD-${sale.id.slice(-8).toUpperCase()}`,
+            order_number: `ORD-${sale.id.toString().slice(-8).toUpperCase()}`,
             shop_name: sale.retailerProfile?.shopName || 'Unknown Shop',
             shop_location: sale.retailerProfile?.address || 'Unknown Location',
             amount: sale.totalAmount,
@@ -285,6 +286,121 @@ export const getCardOrders = async (req: AuthRequest, res: Response) => {
         });
     } catch (error: any) {
         console.error('Get card orders error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Top-up NFC Card from Wallet (Mixed Funding: Dashboard + Credit)
+export const topUpCard = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { cardId } = req.params;
+        const { amount, pin } = req.body;
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ success: false, error: 'Invalid amount' });
+        }
+
+        const consumerProfile = await prisma.consumerProfile.findUnique({
+            where: { userId }
+        });
+
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+
+        // Verify card ownership
+        const card = await prisma.nfcCard.findUnique({
+            where: { id: Number(cardId) }
+        });
+
+        if (!card || card.consumerId !== consumerProfile.id) {
+            return res.status(404).json({ success: false, error: 'Card not found or not owned by you' });
+        }
+
+        // Get Both Wallets
+        const wallets = await prisma.wallet.findMany({
+            where: { consumerId: consumerProfile.id }
+        });
+
+        const dashboardWallet = wallets.find(w => w.type === 'dashboard_wallet');
+        const creditWallet = wallets.find(w => w.type === 'credit_wallet');
+
+        const dashboardBalance = dashboardWallet?.balance || 0;
+        const creditBalance = creditWallet?.balance || 0;
+        const totalAvailable = dashboardBalance + creditBalance;
+
+        // Check total available balance
+        if (totalAvailable < amount) {
+            return res.status(400).json({ success: false, error: 'Insufficient total balance (Dashboard + Credit)' });
+        }
+
+        // Calculate Deduction Split
+        let deductFromDashboard = 0;
+        let deductFromCredit = 0;
+
+        if (dashboardBalance >= amount) {
+            deductFromDashboard = amount;
+        } else {
+            deductFromDashboard = dashboardBalance;
+            deductFromCredit = amount - dashboardBalance;
+        }
+
+        // Perform Transfer Transaction
+        await prisma.$transaction(async (prisma) => {
+            // 1. Deduct from Dashboard Wallet if needed
+            if (deductFromDashboard > 0 && dashboardWallet) {
+                await prisma.wallet.update({
+                    where: { id: dashboardWallet.id },
+                    data: { balance: { decrement: deductFromDashboard } }
+                });
+
+                await prisma.walletTransaction.create({
+                    data: {
+                        walletId: dashboardWallet.id,
+                        type: 'nfc_topup',
+                        amount: -deductFromDashboard,
+                        description: `Top-up NFC Card ${card.uid.slice(-4)}`,
+                        status: 'completed',
+                        reference: card.uid
+                    }
+                });
+            }
+
+            // 2. Deduct from Credit Wallet if needed
+            if (deductFromCredit > 0 && creditWallet) {
+                await prisma.wallet.update({
+                    where: { id: creditWallet.id },
+                    data: { balance: { decrement: deductFromCredit } }
+                });
+
+                await prisma.walletTransaction.create({
+                    data: {
+                        walletId: creditWallet.id,
+                        type: 'nfc_topup',
+                        amount: -deductFromCredit,
+                        description: `Top-up NFC Card ${card.uid.slice(-4)} (Credit)`,
+                        status: 'completed',
+                        reference: card.uid
+                    }
+                });
+            }
+
+            // 3. Add to NFC Card
+            await prisma.nfcCard.update({
+                where: { id: card.id },
+                data: { balance: { increment: amount } }
+            });
+        });
+
+        res.json({
+            success: true,
+            message: 'Card topped up successfully',
+            new_balance: (card.balance || 0) + amount
+        });
+
+    } catch (error: any) {
+        console.error('Top-up NFC card error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 };

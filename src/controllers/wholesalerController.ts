@@ -137,7 +137,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     allOrders.forEach(order => {
       const retailerId = order.retailerId;
       if (!retailerStatsMap[retailerId]) {
-        const name = order.retailerProfile.shopName || order.retailerProfile.user.name || `Retailer ${retailerId.substring(0, 5)}`;
+        const name = order.retailerProfile.shopName || order.retailerProfile.user.name || `Retailer ${retailerId}`;
         retailerStatsMap[retailerId] = { name, orders: 0, revenue: 0 };
       }
       retailerStatsMap[retailerId].orders += 1;
@@ -474,7 +474,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 
     const product = await prisma.product.update({
       where: {
-        id,
+        id: Number(id),
         wholesalerId: wholesalerProfile.id // Ensure ownership
       },
       data: {
@@ -511,7 +511,7 @@ export const updateStock = async (req: AuthRequest, res: Response) => {
     }
 
     const currentProduct = await prisma.product.findUnique({
-      where: { id, wholesalerId: wholesalerProfile.id }
+      where: { id: Number(id), wholesalerId: wholesalerProfile.id }
     });
 
     if (!currentProduct) {
@@ -526,7 +526,7 @@ export const updateStock = async (req: AuthRequest, res: Response) => {
     else if (type === 'set') newStock = amount;
 
     const product = await prisma.product.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { stock: newStock }
     });
 
@@ -554,7 +554,7 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
     }
 
     const product = await prisma.product.update({
-      where: { id, wholesalerId: wholesalerProfile.id },
+      where: { id: Number(id), wholesalerId: wholesalerProfile.id },
       data: {
         price: wholesale_price ? parseFloat(wholesale_price) : undefined,
         costPrice: cost_price ? parseFloat(cost_price) : undefined
@@ -582,7 +582,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.product.delete({
-      where: { id, wholesalerId: wholesalerProfile.id }
+      where: { id: Number(id), wholesalerId: wholesalerProfile.id }
     });
 
     res.json({ success: true, message: 'Product deleted successfully' });
@@ -643,7 +643,7 @@ export const getOrder = async (req: AuthRequest, res: Response) => {
 
     const order = await prisma.order.findUnique({
       where: {
-        id,
+        id: Number(id),
         wholesalerId: wholesalerProfile.id
       },
       include: {
@@ -673,7 +673,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const currentOrder = await prisma.order.findUnique({ where: { id } });
+    const currentOrder = await prisma.order.findUnique({ where: { id: Number(id) } });
     if (!currentOrder) return res.status(404).json({ error: 'Order not found' });
 
     // State machine: pending -> confirmed -> shipped -> delivered
@@ -692,7 +692,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const order = await prisma.order.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { status }
     });
 
@@ -743,7 +743,7 @@ export const approveCreditRequest = async (req: AuthRequest, res: Response) => {
 
     const result = await prisma.$transaction(async (prisma) => {
       const request = await prisma.creditRequest.findUnique({
-        where: { id }
+        where: { id: Number(id) }
       });
 
       if (!request) throw new Error('Credit request not found');
@@ -751,7 +751,7 @@ export const approveCreditRequest = async (req: AuthRequest, res: Response) => {
 
       // 1. Update Request
       await prisma.creditRequest.update({
-        where: { id },
+        where: { id: Number(id) },
         data: {
           status: 'approved',
           reviewedAt: new Date(),
@@ -804,7 +804,7 @@ export const rejectCreditRequest = async (req: AuthRequest, res: Response) => {
     const { notes } = req.body;
 
     await prisma.creditRequest.update({
-      where: { id },
+      where: { id: Number(id) },
       data: {
         status: 'rejected',
         reviewedAt: new Date(),

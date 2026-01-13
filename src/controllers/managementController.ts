@@ -292,7 +292,8 @@ export const updateSupplier = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { name, contact_person, email, phone, address, status } = req.body;
-        console.log('✏️ Updating supplier:', id);
+        const supplierId = Number(id);
+        console.log('✏️ Updating supplier:', supplierId);
 
         const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
             where: { userId: req.user!.id }
@@ -302,12 +303,21 @@ export const updateSupplier = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
 
-        // Verify ownership and update
-        const supplier = await prisma.supplier.update({
+        // Verify ownership first
+        const existingSupplier = await prisma.supplier.findFirst({
             where: {
-                id,
+                id: supplierId,
                 wholesalerId: (wholesalerProfile as any).id
-            } as any,
+            } as any
+        });
+
+        if (!existingSupplier) {
+            return res.status(404).json({ error: 'Supplier not found or does not belong to your account' });
+        }
+
+        // Update using unique ID
+        const supplier = await prisma.supplier.update({
+            where: { id: supplierId },
             data: {
                 ...(name && { name }),
                 ...(contact_person && { contactPerson: contact_person }),
@@ -363,7 +373,8 @@ export const updateSupplier = async (req: AuthRequest, res: Response) => {
 export const deleteSupplier = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        console.log('🗑️ Deleting supplier:', id);
+        const supplierId = Number(id);
+        console.log('🗑️ Deleting supplier:', supplierId);
 
         const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
             where: { userId: req.user!.id }
@@ -373,12 +384,21 @@ export const deleteSupplier = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
 
-        // Soft delete by setting status to inactive - checking ownership
-        await prisma.supplier.update({
+        // Verify ownership first
+        const existingSupplier = await prisma.supplier.findFirst({
             where: {
-                id,
+                id: supplierId,
                 wholesalerId: (wholesalerProfile as any).id
-            } as any,
+            } as any
+        });
+
+        if (!existingSupplier) {
+            return res.status(404).json({ error: 'Supplier not found or does not belong to your account' });
+        }
+
+        // Soft delete by setting status to inactive
+        await prisma.supplier.update({
+            where: { id: supplierId },
             data: { status: 'inactive' }
         });
 
@@ -451,7 +471,7 @@ export const getProfitInvoiceDetails = async (req: AuthRequest, res: Response) =
         console.log('🔍 Fetching profit invoice details for ID:', id);
 
         const invoice = await prisma.profitInvoice.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: {
                 order: {
                     include: {
@@ -489,10 +509,10 @@ export const getProfitInvoiceDetails = async (req: AuthRequest, res: Response) =
             due_date: invoice.generatedAt.toISOString(),
             paid_at: invoice.generatedAt.toISOString(),
             order_details: {
-                id: invoice.order.id,
-                retailer_name: invoice.order.retailerProfile.user.name,
-                total_amount: invoice.order.totalAmount,
-                items: (invoice.order as any).orderItems.map((item: any) => ({
+                id: (invoice as any).order.id,
+                retailer_name: (invoice as any).order.retailerProfile.user.name,
+                total_amount: (invoice as any).order.totalAmount,
+                items: (invoice as any).order.orderItems.map((item: any) => ({
                     product_name: item.product.name,
                     quantity: item.quantity,
                     price: item.price

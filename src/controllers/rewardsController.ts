@@ -93,7 +93,7 @@ export const getReferralCode = async (req: AuthRequest, res: Response) => {
         }
 
         // Generate referral code from user ID (simple implementation)
-        const referralCode = 'BIG' + user.id.substring(0, 6).toUpperCase();
+        const referralCode = 'BIG' + user.id.toString().substring(0, 6).toUpperCase();
 
         res.json({
             success: true,

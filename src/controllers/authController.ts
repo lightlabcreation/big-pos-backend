@@ -33,7 +33,6 @@ export const register = async (req: Request, res: Response) => {
 
     const user = await prisma.user.create({
       data: {
-        id: crypto.randomUUID(),
         email,
         phone,
         password: hashedPassword,
@@ -48,14 +47,12 @@ export const register = async (req: Request, res: Response) => {
     if (targetuser_role === 'consumer') {
       await prisma.consumerProfile.create({
         data: {
-          id: crypto.randomUUID(),
           userId: user.id
         }
       });
     } else if (targetuser_role === 'retailer') {
       await prisma.retailerProfile.create({
         data: {
-          id: crypto.randomUUID(),
           userId: user.id,
           shopName: shop_name || business_name || 'My Shop',
           address: req.body.address
@@ -64,7 +61,6 @@ export const register = async (req: Request, res: Response) => {
     } else if (targetuser_role === 'wholesaler') {
       await prisma.wholesalerProfile.create({
         data: {
-          id: crypto.randomUUID(),
           userId: user.id,
           companyName: company_name || 'My Company',
           address: req.body.address

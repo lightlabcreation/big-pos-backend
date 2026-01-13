@@ -8,7 +8,7 @@ datasource db {
 }
 
 model User {
-  id                               String             @id @default(uuid())
+  id                               Int             @id @default(autoincrement())
   email                            String?            @unique
   phone                            String?            @unique
   password                         String?
@@ -30,8 +30,8 @@ model User {
 }
 
 model RetailerProfile {
-  id             String          @id @default(uuid())
-  userId         String          @unique
+  id             Int             @id @default(autoincrement())
+  userId         Int             @unique
   shopName       String
   address        String?
   creditLimit    Float           @default(0)
@@ -50,8 +50,8 @@ model RetailerProfile {
 }
 
 model WholesalerProfile {
-  id               String              @id @default(uuid())
-  userId           String              @unique
+  id               Int                 @id @default(autoincrement())
+  userId           Int                 @unique
   companyName      String
   contactPerson    String?
   tinNumber        String?
@@ -68,8 +68,8 @@ model WholesalerProfile {
 }
 
 model WholesalerSettings {
-  id                 String            @id @default(uuid())
-  wholesalerId       String            @unique
+  id                 Int               @id @default(autoincrement())
+  wholesalerId       Int               @unique
   pushNotifications  Boolean           @default(true)
   emailNotifications Boolean           @default(true)
   smsNotifications   Boolean           @default(true)
@@ -91,8 +91,8 @@ model WholesalerSettings {
 
 
 model Attendance {
-  id              String          @id @default(uuid())
-  employeeId      String
+  id              Int             @id @default(autoincrement())
+  employeeId      Int
   date            DateTime
   checkIn         DateTime
   checkOut        DateTime?
@@ -109,8 +109,8 @@ model Attendance {
 }
 
 model LeaveRequest {
-  id              String          @id @default(uuid())
-  employeeId      String
+  id              Int             @id @default(autoincrement())
+  employeeId      Int
   type            String
   startDate       DateTime
   endDate         DateTime
@@ -127,8 +127,8 @@ model LeaveRequest {
 }
 
 model BillPayment {
-  id                String          @id @default(uuid())
-  employeeId        String
+  id                Int             @id @default(autoincrement())
+  employeeId        Int
   companyName       String
   companyType       String
   accountNumber     String
@@ -148,8 +148,8 @@ model BillPayment {
 }
 
 model Branch {
-  id              String          @id @default(uuid())
-  retailerId      String
+  id              Int             @id @default(autoincrement())
+  retailerId      Int
   name            String
   location        String?
   retailerProfile RetailerProfile @relation(fields: [retailerId], references: [id], map: "Branch_retailerId_fkey")
@@ -161,7 +161,7 @@ model Branch {
 }
 
 model Category {
-  id          String   @id @default(uuid())
+  id          Int      @id @default(autoincrement())
   code        String   @unique(map: "Category_code_key")
   name        String
   description String?
@@ -173,8 +173,8 @@ model Category {
 }
 
 model ConsumerProfile {
-  id             String          @id @default(uuid())
-  userId         String          @unique(map: "ConsumerProfile_userId_key")
+  id             Int             @id @default(autoincrement())
+  userId         Int             @unique(map: "ConsumerProfile_userId_key")
   walletBalance  Float           @default(0)
   rewardsPoints  Float           @default(0)
   address        String?
@@ -196,9 +196,51 @@ model ConsumerProfile {
   @@map("consumerProfile")
 }
 
+model ConsumerSettings {
+  id                  Int             @id @default(autoincrement())
+  consumerId          Int             @unique(map: "consumerSettings_consumerId_unique")
+  consumer            ConsumerProfile @relation(fields: [consumerId], references: [id])
+  
+  // Notification Preferences
+  pushNotifications   Boolean         @default(true)
+  emailNotifications  Boolean         @default(true)
+  smsNotifications    Boolean         @default(false)
+  
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@map("consumerSettings")
+}
+
+
+model SystemConfig {
+  id                    Int      @id @default(autoincrement())
+  
+  // Profit Margin Settings (%)
+  retailerShare         Float    @default(60)
+  companyShare          Float    @default(28)
+  gasRewardShare        Float    @default(12)
+  
+  // Gas Pricing (RWF)
+  gasPricePerM3         Float    @default(850)
+  minGasTopup           Float    @default(500)
+  maxGasTopup           Float    @default(100000)
+  
+  // Transaction Limits (RWF)
+  minWalletTopup        Float    @default(500)
+  maxWalletTopup        Float    @default(500000)
+  maxDailyTransaction    Float    @default(1000000)
+  maxCreditLimit        Float    @default(500000)
+  
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
+
+  @@map("systemConfig")
+}
+
 model CreditRequest {
-  id              String          @id @default(uuid())
-  retailerId      String
+  id              Int             @id @default(autoincrement())
+  retailerId      Int
   amount          Float
   reason          String?
   status          String          @default("pending")
@@ -213,8 +255,8 @@ model CreditRequest {
 }
 
 model CustomerOrder {
-  id              String          @id @default(uuid())
-  consumerId      String
+  id              Int             @id @default(autoincrement())
+  consumerId      Int
   orderType       String
   status          String
   amount          Float
@@ -230,7 +272,7 @@ model CustomerOrder {
 }
 
 model Deal {
-  id                String    @id @default(uuid())
+  id                Int       @id @default(autoincrement())
   title             String
   clientName        String
   value             Float
@@ -246,9 +288,9 @@ model Deal {
 
 
 model EmployeeProfile {
-  id             String         @id @default(uuid())
-  userId         String         @unique(map: "EmployeeProfile_userId_key")
-  employeeNumber String         @unique(map: "EmployeeProfile_employeeNumber_key")
+  id             Int             @id @default(autoincrement())
+  userId         Int             @unique(map: "EmployeeProfile_userId_key")
+  employeeNumber String          @unique(map: "EmployeeProfile_employeeNumber_key")
   department     String
   position       String
   bankAccount    String?
@@ -269,8 +311,8 @@ model EmployeeProfile {
 }
 
 model GasMeter {
-  id              String          @id @default(uuid())
-  consumerId      String
+  id              Int             @id @default(autoincrement())
+  consumerId      Int
   meterNumber     String          @unique(map: "GasMeter_meterNumber_key")
   aliasName       String?
   ownerName       String?
@@ -286,8 +328,8 @@ model GasMeter {
 }
 
 model GasReward {
-  id              String          @id @default(uuid())
-  consumerId      String
+  id              Int             @id @default(autoincrement())
+  consumerId      Int
   units           Float
   source          String
   reference       String?
@@ -300,9 +342,9 @@ model GasReward {
 }
 
 model GasTopup {
-  id              String          @id @default(uuid())
-  consumerId      String
-  meterId         String
+  id              Int             @id @default(autoincrement())
+  consumerId      Int
+  meterId         Int
   amount          Float
   units           Float
   currency        String          @default("RWF")
@@ -319,8 +361,8 @@ model GasTopup {
 }
 
 model JobApplication {
-  id          String     @id @default(uuid())
-  jobId       String
+  id          Int      @id @default(autoincrement())
+  jobId       Int
   name        String
   email       String
   phone       String
@@ -335,7 +377,7 @@ model JobApplication {
 }
 
 model JobPosting {
-  id             String           @id @default(uuid())
+  id             Int             @id @default(autoincrement())
   title          String
   department     String
   type           String
@@ -353,8 +395,8 @@ model JobPosting {
 
 
 model Loan {
-  id              String          @id @default(uuid())
-  consumerId      String
+  id              Int             @id @default(autoincrement())
+  consumerId      Int
   amount          Float
   status          String
   dueDate         DateTime?
@@ -367,9 +409,9 @@ model Loan {
 }
 
 model Message {
-  id                            String   @id @default(uuid())
-  senderId                      String
-  receiverId                    String
+  id                            Int      @id @default(autoincrement())
+  senderId                      Int
+  receiverId                    Int
   content                       String
   createdAt                     DateTime @default(now())
   updatedAt                     DateTime @updatedAt
@@ -382,12 +424,12 @@ model Message {
 }
 
 model NfcCard {
-  id              String           @id @default(uuid())
+  id              Int             @id @default(autoincrement())
   uid             String           @unique(map: "NfcCard_uid_key")
   pin             String?
   status          String
-  consumerId      String?
-  retailerId      String?
+  consumerId      Int?
+  retailerId      Int?
   balance         Float            @default(0)
   
   // New Metadata Fields
@@ -414,8 +456,8 @@ model NfcCard {
 }
 
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
+  id        Int      @id @default(autoincrement())
+  userId    Int
   title     String
   message   String
   read      Boolean  @default(false)
@@ -428,9 +470,9 @@ model Notification {
 }
 
 model Order {
-  id                String            @id @default(uuid())
-  retailerId        String
-  wholesalerId      String
+  id                Int             @id @default(autoincrement())
+  retailerId        Int
+  wholesalerId      Int
   status            String
   totalAmount       Float
   createdAt         DateTime          @default(now())
@@ -446,9 +488,9 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(uuid())
-  orderId   String
-  productId String
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  productId Int
   quantity  Int
   price     Float
   order     Order   @relation(fields: [orderId], references: [id], map: "OrderItem_orderId_fkey")
@@ -460,7 +502,7 @@ model OrderItem {
 }
 
 model Product {
-  id                String             @id @default(uuid())
+  id                Int             @id @default(autoincrement())
   name              String
   description       String?
   sku               String?
@@ -469,8 +511,8 @@ model Product {
   costPrice         Float?
   retailerPrice     Float?           @default(0)
   stock             Int                @default(0)
-  retailerId        String?
-  wholesalerId      String?
+  retailerId        Int?
+  wholesalerId      Int?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   barcode           String?
@@ -478,7 +520,7 @@ model Product {
   lowStockThreshold Int?
   unit              String?
   status            String             @default("active")
-  supplierId        String?
+  supplierId        Int?
   orderItems        OrderItem[]
   retailerProfile   RetailerProfile?   @relation(fields: [retailerId], references: [id], map: "Product_retailerId_fkey")
   supplier          Supplier?          @relation(fields: [supplierId], references: [id], map: "Product_supplierId_fkey")
@@ -492,8 +534,8 @@ model Product {
 }
 
 model ProfitInvoice {
-  id            String   @id @default(uuid())
-  orderId       String   @unique(map: "ProfitInvoice_orderId_key")
+  id            Int      @id @default(autoincrement())
+  orderId       Int      @unique(map: "ProfitInvoice_orderId_key")
   profitAmount  Float
   invoiceNumber String   @unique(map: "ProfitInvoice_invoiceNumber_key")
   generatedAt   DateTime @default(now())
@@ -504,8 +546,8 @@ model ProfitInvoice {
 }
 
 model RetailerCredit {
-  id              String          @id @default(uuid())
-  retailerId      String          @unique(map: "RetailerCredit_retailerId_key")
+  id              Int             @id @default(autoincrement())
+  retailerId      Int             @unique(map: "RetailerCredit_retailerId_key")
   creditLimit     Float           @default(0)
   usedCredit      Float           @default(0)
   availableCredit Float           @default(0)
@@ -517,10 +559,10 @@ model RetailerCredit {
 
 
 model Sale {
-  id              String           @id @default(uuid())
-  retailerId      String
-  consumerId      String?
-  branchId        String?
+  id              Int             @id @default(autoincrement())
+  retailerId      Int
+  consumerId      Int?
+  branchId        Int?
   status          String
   totalAmount     Float
   paymentMethod   String
@@ -538,9 +580,9 @@ model Sale {
 }
 
 model SaleItem {
-  id        String  @id @default(uuid())
-  saleId    String
-  productId String
+  id        Int     @id @default(autoincrement())
+  saleId    Int
+  productId Int
   quantity  Int
   price     Float
   product   Product @relation(fields: [productId], references: [id], map: "SaleItem_productId_fkey")
@@ -552,7 +594,7 @@ model SaleItem {
 }
 
 model Supplier {
-  id                String            @id @default(uuid())
+  id                Int             @id @default(autoincrement())
   name              String
   contactPerson     String?
   phone             String?
@@ -561,7 +603,7 @@ model Supplier {
   status            String            @default("active")
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
-  wholesalerId      String
+  wholesalerId      Int
   products          Product[]
   wholesalerProfile WholesalerProfile @relation(fields: [wholesalerId], references: [id], map: "Supplier_wholesalerId_fkey")
   supplierPayments  SupplierPayment[]
@@ -571,8 +613,8 @@ model Supplier {
 }
 
 model SupplierPayment {
-  id                String            @id @default(uuid())
-  supplierId        String
+  id                Int             @id @default(autoincrement())
+  supplierId        Int
   amount            Float
   paymentDate       DateTime
   reference         String?
@@ -580,7 +622,7 @@ model SupplierPayment {
   notes             String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
-  wholesalerId      String
+  wholesalerId      Int
   supplier          Supplier          @relation(fields: [supplierId], references: [id], map: "SupplierPayment_supplierId_fkey")
   wholesalerProfile WholesalerProfile @relation(fields: [wholesalerId], references: [id], map: "SupplierPayment_wholesalerId_fkey")
 
@@ -590,8 +632,8 @@ model SupplierPayment {
 }
 
 model Terminal {
-  id           String @id @default(uuid())
-  branchId     String
+  id           Int    @id @default(autoincrement())
+  branchId     Int
   name         String
   serialNumber String @unique(map: "Terminal_serialNumber_key")
   branch       Branch @relation(fields: [branchId], references: [id], map: "Terminal_branchId_fkey")
@@ -602,8 +644,8 @@ model Terminal {
 
 
 model Wallet {
-  id                String              @id @default(uuid())
-  consumerId        String
+  id                Int              @id @default(autoincrement())
+  consumerId        Int
   type              String
   balance           Float               @default(0)
   currency          String              @default("RWF")
@@ -617,8 +659,8 @@ model Wallet {
 }
 
 model WalletTransaction {
-  id          String   @id @default(uuid())
-  walletId    String
+  id          Int      @id @default(autoincrement())
+  walletId    Int
   type        String
   amount      Float
   description String?
@@ -634,7 +676,7 @@ model WalletTransaction {
 
 
 model Project {
-  id          String          @id @default(uuid())
+  id          Int             @id @default(autoincrement())
   name        String
   description String?         @db.Text
   status      project_status  @default(NOT_STARTED)
@@ -644,7 +686,7 @@ model Project {
   endDate     DateTime?
   dueDate     DateTime
   client      String?
-  managerId   String
+  managerId   Int
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   manager     EmployeeProfile @relation("ProjectManager", fields: [managerId], references: [id], map: "Project_managerId_fkey")
@@ -656,12 +698,12 @@ model Project {
 }
 
 model Task {
-  id             String          @id @default(uuid())
-  projectId      String
+  id             Int             @id @default(autoincrement())
+  projectId      Int
   title          String
   description    String?         @db.Text
   status         task_status     @default(TODO)
-  assignedToId   String?
+  assignedToId   Int?
   dueDate        DateTime?
   estimatedHours Float?
   actualHours    Float           @default(0)
@@ -676,9 +718,9 @@ model Task {
 }
 
 model ProjectMember {
-  id              String          @id @default(uuid())
-  projectId       String
-  employeeId      String
+  id              Int             @id @default(autoincrement())
+  projectId       Int
+  employeeId      Int
   role            String
   joinedAt        DateTime        @default(now())
   project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "ProjectMember_projectId_fkey")
@@ -691,7 +733,7 @@ model ProjectMember {
 }
 
 model Course {
-  id          String             @id @default(uuid())
+  id          Int             @id @default(autoincrement())
   title       String
   description String?            @db.Text
   category    String
@@ -708,9 +750,9 @@ model Course {
 }
 
 model CourseEnrollment {
-  id             String            @id @default(uuid())
-  courseId       String
-  employeeId     String
+  id             Int             @id @default(autoincrement())
+  courseId       Int
+  employeeId     Int
   status         enrollment_status @default(NOT_STARTED)
   progress       Int               @default(0)
   enrolledAt     DateTime          @default(now())
@@ -727,8 +769,8 @@ model CourseEnrollment {
 }
 
 model Lesson {
-  id             String           @id @default(uuid())
-  courseId       String
+  id             Int              @id @default(autoincrement())
+  courseId       Int
   title          String
   description    String?          @db.Text
   order          Int
@@ -742,9 +784,9 @@ model Lesson {
 }
 
 model LessonProgress {
-  id           String           @id @default(uuid())
-  enrollmentId String
-  lessonId     String
+  id           Int              @id @default(autoincrement())
+  enrollmentId Int
+  lessonId     Int
   completed    Boolean          @default(false)
   completedAt  DateTime?
   enrollment   CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade, map: "LessonProgress_enrollmentId_fkey")
@@ -790,60 +832,6 @@ enum task_status {
   COMPLETED
   CANCELLED
 }
-
-enum user_role {
-  consumer
-  retailer
-  wholesaler
-  employee
-  admin
-}
-
-
-
-// Consumer Settings - Notification preferences for consumers
-model ConsumerSettings {
-  id                  String          @id @default(uuid())
-  consumerId          String          @unique(map: "consumerSettings_consumerId_unique")
-  consumer            ConsumerProfile @relation(fields: [consumerId], references: [id])
-  
-  // Notification Preferences
-  pushNotifications   Boolean         @default(true)
-  emailNotifications  Boolean         @default(true)
-  smsNotifications    Boolean         @default(false)
-  
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-
-  @@map("consumerSettings")
-}
-
-
-model SystemConfig {
-  id                    String   @id @default(uuid())
-  
-  // Profit Margin Settings (%)
-  retailerShare         Float    @default(60)
-  companyShare          Float    @default(28)
-  gasRewardShare        Float    @default(12)
-  
-  // Gas Pricing (RWF)
-  gasPricePerM3         Float    @default(850)
-  minGasTopup           Float    @default(500)
-  maxGasTopup           Float    @default(100000)
-  
-  // Transaction Limits (RWF)
-  minWalletTopup        Float    @default(500)
-  maxWalletTopup        Float    @default(500000)
-  maxDailyTransaction    Float    @default(1000000)
-  maxCreditLimit        Float    @default(500000)
-  
-  updatedAt             DateTime @updatedAt
-  createdAt             DateTime @default(now())
-
-  @@map("systemConfig")
-}
-
 
 enum Role {
   consumer
