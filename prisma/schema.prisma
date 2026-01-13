@@ -67,7 +67,7 @@ model Category {
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
 
   @@map("category")
 }
@@ -299,7 +299,7 @@ model Course {
   totalLessons     Int
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
-  courseEnrollments CourseEnrollment[]
+  enrollments CourseEnrollment[]
   lessons           Lesson[]
 
   @@map("course")
@@ -334,7 +334,7 @@ model BillPayment {
   endDate           DateTime?
   notes             String?
   createdAt         DateTime        @default(now())
-  updatedAt         DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   employeeProfile   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: NoAction, map: "BillPayment_employeeId_fkey")
 
   @@index([employeeId], map: "BillPayment_employeeId_fkey")
@@ -372,7 +372,7 @@ model ConsumerSettings {
   emailNotifications Boolean         @default(true)
   smsNotifications   Boolean         @default(false)
   createdAt          DateTime        @default(now())
-  updatedAt          DateTime
+  updatedAt          DateTime @default(now()) @updatedAt
   consumerProfile    ConsumerProfile @relation(fields: [consumerId], references: [id], onDelete: NoAction, map: "consumerSettings_consumerId_fkey")
 
   @@map("consumersettings")
@@ -406,7 +406,7 @@ model CreditRequest {
   reviewedAt      DateTime?
   reviewNotes     String?
   createdAt       DateTime        @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   retailerProfile RetailerProfile @relation(fields: [retailerId], references: [id], onDelete: NoAction, map: "CreditRequest_retailerId_fkey")
 
   @@index([retailerId], map: "CreditRequest_retailerId_fkey")
@@ -423,7 +423,7 @@ model CustomerOrder {
   items           String?         @db.LongText
   metadata        String?         @db.LongText
   createdAt       DateTime        @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   consumerProfile ConsumerProfile @relation(fields: [consumerId], references: [id], onDelete: NoAction, map: "CustomerOrder_consumerId_fkey")
 
   @@index([consumerId], map: "CustomerOrder_consumerId_fkey")
@@ -440,10 +440,10 @@ model EmployeeProfile {
   joiningDate       DateTime           @default(now())
   salary            Float              @default(0)
   status            String             @default("active")
-  updatedAt         DateTime
+  updatedAt         DateTime           @default(now()) @updatedAt
   attendances       Attendance[]
   billPayments      BillPayment[]
-  courseEnrollments CourseEnrollment[]
+  enrollments CourseEnrollment[]
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade, map: "EmployeeProfile_userId_fkey")
   leaveRequests     LeaveRequest[]
   managedProjects   Project[]          @relation("ProjectManager")
@@ -462,7 +462,7 @@ model GasMeter {
   ownerPhone      String?
   status          String          @default("active")
   createdAt       DateTime        @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   consumerProfile ConsumerProfile @relation(fields: [consumerId], references: [id], onDelete: NoAction, map: "GasMeter_consumerId_fkey")
   gasTopups       GasTopup[]
 
@@ -477,7 +477,7 @@ model GasReward {
   source          String
   reference       String?
   createdAt       DateTime        @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   consumerProfile ConsumerProfile @relation(fields: [consumerId], references: [id], onDelete: NoAction, map: "GasReward_consumerId_fkey")
 
   @@index([consumerId], map: "GasReward_consumerId_fkey")
@@ -494,7 +494,7 @@ model GasTopup {
   status          String          @default("completed")
   orderId         String?
   createdAt       DateTime        @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   consumerProfile ConsumerProfile @relation(fields: [consumerId], references: [id], onDelete: NoAction, map: "GasTopup_consumerId_fkey")
   gasMeter        GasMeter        @relation(fields: [meterId], references: [id], onDelete: NoAction, map: "GasTopup_meterId_fkey")
 
@@ -512,7 +512,7 @@ model JobApplication {
   resumeUrl   String?
   status      String     @default("applied")
   appliedDate DateTime   @default(now())
-  updatedAt   DateTime
+  updatedAt   DateTime @default(now()) @updatedAt
   jobPosting  JobPosting @relation(fields: [jobId], references: [id], onDelete: NoAction, map: "JobApplication_jobId_fkey")
 
   @@index([jobId], map: "JobApplication_jobId_fkey")
@@ -530,7 +530,7 @@ model JobPosting {
   description     String           @db.Text
   status          String           @default("open")
   postedDate      DateTime         @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime @default(now()) @updatedAt
   jobApplications JobApplication[]
 
   @@map("jobposting")
@@ -547,7 +547,7 @@ model LeaveRequest {
   approvedBy      String?
   rejectionReason String?
   createdAt       DateTime        @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   employeeProfile EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: NoAction, map: "LeaveRequest_employeeId_fkey")
 
   @@index([employeeId], map: "LeaveRequest_employeeId_fkey")
@@ -589,7 +589,7 @@ model NfcCard {
   streetAddress   String?
   landmark        String?
   createdAt       DateTime         @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime         @default(now()) @updatedAt
   consumerProfile ConsumerProfile? @relation(fields: [consumerId], references: [id], map: "NfcCard_consumerId_fkey")
   retailerProfile RetailerProfile? @relation(fields: [retailerId], references: [id], map: "NfcCard_retailerId_fkey")
 
@@ -618,7 +618,7 @@ model ProfitInvoice {
   profitAmount  Float
   invoiceNumber String   @unique(map: "ProfitInvoice_invoiceNumber_key")
   generatedAt   DateTime @default(now())
-  updatedAt     DateTime
+  updatedAt     DateTime @default(now()) @updatedAt
   order         Order    @relation(fields: [orderId], references: [id], onDelete: NoAction, map: "ProfitInvoice_orderId_fkey")
 
   @@map("profitinvoice")
@@ -645,7 +645,7 @@ model RetailerCredit {
   creditLimit     Float           @default(0)
   usedCredit      Float           @default(0)
   availableCredit Float           @default(0)
-  updatedAt       DateTime
+  updatedAt       DateTime        @default(now()) @updatedAt
   retailerProfile RetailerProfile @relation(fields: [retailerId], references: [id], onDelete: NoAction, map: "RetailerCredit_retailerId_fkey")
 
   @@map("retailercredit")
@@ -664,7 +664,7 @@ model RetailerProfile {
   nfcCards       NfcCard[]
   orders         Order[]
   inventory      Product[]
-  retailerCredit RetailerCredit?
+  credit         RetailerCredit?
   user           User            @relation(fields: [userId], references: [id], onDelete: NoAction, map: "retailerProfile_userId_fkey")
   sales          Sale[]
 
@@ -694,7 +694,7 @@ model SupplierPayment {
   status            String            @default("completed")
   notes             String?
   createdAt         DateTime          @default(now())
-  updatedAt         DateTime
+  updatedAt         DateTime          @default(now()) @updatedAt
   wholesalerId      Int
   supplier          Supplier          @relation(fields: [supplierId], references: [id], onDelete: NoAction, map: "SupplierPayment_supplierId_fkey")
   wholesalerProfile WholesalerProfile @relation(fields: [wholesalerId], references: [id], onDelete: NoAction, map: "SupplierPayment_wholesalerId_fkey")
@@ -716,7 +716,7 @@ model SystemConfig {
   maxWalletTopup      Float    @default(500000)
   maxDailyTransaction Float    @default(1000000)
   maxCreditLimit      Float    @default(500000)
-  updatedAt           DateTime
+  updatedAt           DateTime @default(now()) @updatedAt
   createdAt           DateTime @default(now())
 
   @@map("systemconfig")
@@ -731,7 +731,7 @@ model WalletTransaction {
   reference   String?
   status      String   @default("completed")
   createdAt   DateTime @default(now())
-  updatedAt   DateTime
+  updatedAt   DateTime @default(now()) @updatedAt
   wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: NoAction, map: "WalletTransaction_walletId_fkey")
 
   @@index([walletId], map: "WalletTransaction_walletId_fkey")
@@ -773,7 +773,7 @@ model WholesalerSettings {
   receiptPrinter     String            @default("bluetooth")
   barcodeScanner     String            @default("camera")
   nfcEnabled         Boolean           @default(true)
-  updatedAt          DateTime
+  updatedAt          DateTime          @default(now()) @updatedAt
   wholesalerProfile  WholesalerProfile @relation(fields: [wholesalerId], references: [id], onDelete: NoAction, map: "wholesalerSettings_wholesalerId_fkey")
 
   @@map("wholesalersettings")
