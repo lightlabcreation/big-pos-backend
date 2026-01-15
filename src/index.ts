@@ -9,7 +9,7 @@ import employeeRoutes from './routes/employeeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
-import debugRoutes from './routes/debugRoutes';
+import debugRoutes, { setAppInstance } from './routes/debugRoutes';
 import trainingRoutes from './routes/trainingRoutes';
 console.log('--- Server Starting ---');
 
@@ -75,6 +75,7 @@ app.use('/admin', adminRoutes);
 app.use('/nfc', nfcRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/debug', debugRoutes); // Public debug endpoint
+setAppInstance(app); // Enable route listing in debug
 
 app.get('/', (req, res) => {
   res.send('Big Company API is running');

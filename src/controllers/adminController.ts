@@ -63,8 +63,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     const wholesalerTotal = await prisma.wholesalerProfile.count();
     const wholesalerActive = await prisma.user.count({ where: { role: 'wholesaler', isActive: true } });
 
-    // Recent Activity - Merge Sales, New Customers, and Loans
-    const [recentSales, recentConsumers, recentLoans] = await Promise.all([
+    // Recent Activity - Merge Sales, New Customers, Loans, and Gas Topups
+    const [recentSales, recentConsumers, recentLoans, recentGas] = await Promise.all([
       prisma.sale.findMany({
         take: 5,
         orderBy: { createdAt: 'desc' },
@@ -82,6 +82,11 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         take: 5,
         orderBy: { createdAt: 'desc' },
         include: { consumerProfile: true }
+      }),
+      prisma.gasTopup.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { consumerProfile: { select: { fullName: true } } }
       })
     ]);
 
@@ -106,6 +111,13 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         entity_type: 'loan',
         description: `Loan of ${l.amount} RWF ${l.status}`,
         created_at: l.createdAt
+      })),
+      ...recentGas.map(g => ({
+        id: `gas-${g.id}`,
+        action: 'gas_recharge',
+        entity_type: 'gas',
+        description: `${g.amount} RWF recharge for ${g.consumerProfile?.fullName || 'Customer'}`,
+        created_at: g.createdAt
       }))
     ];
 
@@ -236,10 +248,40 @@ export const getReports = async (req: AuthRequest, res: Response) => {
 export const getCustomers = async (req: AuthRequest, res: Response) => {
   try {
     const customers = await prisma.consumerProfile.findMany({
-      include: { user: true }
+      include: { 
+        user: true,
+        sales: {
+          select: {
+            totalAmount: true
+          }
+        },
+        gasTopups: {
+          select: {
+            units: true
+          }
+        },
+        gasMeters: {
+          where: { status: { not: 'removed' } }
+        }
+      }
     });
-    res.json({ success: true, customers });
+
+    const formattedCustomers = customers.map(customer => {
+      const orderCount = customer.sales.length;
+      const totalSpent = customer.sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+      const gasBalance = customer.gasTopups.reduce((sum, topup) => sum + topup.units, 0).toFixed(2) + " M³";
+      
+      return {
+        ...customer,
+        orderCount,
+        totalSpent,
+        gasBalance
+      };
+    });
+
+    res.json({ success: true, customers: formattedCustomers });
   } catch (error: any) {
+    console.error('Get Customers Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -252,7 +294,10 @@ export const getCustomer = async (req: AuthRequest, res: Response) => {
       include: {
         user: true,
         wallets: true,
-        nfcCards: true
+        nfcCards: true,
+        gasMeters: {
+          where: { status: { not: 'removed' } }
+        }
       }
     });
 
@@ -263,6 +308,84 @@ export const getCustomer = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, customer });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Create customer (Admin only)
+export const createCustomer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { email, phone, password, pin, first_name, last_name, full_name } = req.body;
+    
+    console.log('📝 Creating customer with data:', { first_name, last_name, full_name, phone, email });
+
+    // Validate required fields
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+
+    if (!password && !pin) {
+      return res.status(400).json({ error: 'Either password or PIN is required' });
+    }
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phone },
+          ...(email ? [{ email }] : [])
+        ]
+      }
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this phone or email already exists' });
+    }
+
+    // Hash password/pin
+    const hashedPassword = password ? await hashPassword(password) : undefined;
+    const hashedPin = pin ? await hashPassword(pin) : undefined;
+
+    // Create user and profile in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Construct full name properly
+      const fullName = full_name || 
+        (first_name ? `${first_name}${last_name ? ' ' + last_name : ''}`.trim() : null);
+      
+      const userName = fullName || phone;
+
+      const user = await tx.user.create({
+        data: {
+          email,
+          phone,
+          password: hashedPassword,
+          pin: hashedPin,
+          role: 'consumer',
+          name: userName,
+          isActive: true
+        }
+      });
+
+      const consumerProfile = await tx.consumerProfile.create({
+        data: {
+          userId: user.id,
+          fullName: fullName
+        }
+      });
+
+      return { user, consumerProfile };
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Customer created successfully',
+      customer: {
+        ...result.consumerProfile,
+        user: result.user
+      }
+    });
+  } catch (error: any) {
+    console.error('Create Customer Error:', error);
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -839,63 +962,7 @@ export const updateWholesalerStatus = async (req: AuthRequest, res: Response) =>
 // CUSTOMER MANAGEMENT (Extra CRUD)
 // ==========================================
 
-export const createCustomer = async (req: AuthRequest, res: Response) => {
-  try {
-    const { firstName, lastName, email, phone, password } = req.body;
-
-    if (!email || !phone) {
-      return res.status(400).json({ error: 'Email and Phone are required' });
-    }
-
-    const existingEmail = await prisma.user.findFirst({ where: { email: email as string } });
-    if (existingEmail) {
-      return res.status(400).json({ error: `Customer with email ${email} already exists` });
-    }
-
-    const existingPhone = await prisma.user.findFirst({ where: { phone: phone as string } });
-    if (existingPhone) {
-      return res.status(400).json({ error: `Customer with phone ${phone} already exists` });
-    }
-
-    // const exists = await prisma.user.findFirst({
-    //     where: {
-    //         OR: [
-    //             { email },
-    //             { phone }
-    //         ]
-    //     }
-    // });
-
-    // if (exists) {
-    //     return res.status(400).json({ error: 'User with this email or phone already exists' });
-    // }
-
-    const hashedPassword = await hashPassword(password || '123456'); // Default pin/pass
-
-    const user = await prisma.user.create({
-      data: {
-        name: `${firstName} ${lastName}`,
-        email,
-        phone,
-        password: hashedPassword,
-        role: 'consumer',
-        isActive: true,
-        consumerProfile: {
-          create: {
-            fullName: `${firstName} ${lastName}`,
-            isVerified: true
-          }
-        }
-      },
-      include: { consumerProfile: true }
-    });
-
-    res.status(201).json({ success: true, customer: user.consumerProfile });
-  } catch (error: any) {
-    console.error('Create Customer Error:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
+// Note: createCustomer is now defined earlier in the file (after getCustomer)
 
 export const updateCustomer = async (req: AuthRequest, res: Response) => {
   try {
@@ -1774,5 +1841,808 @@ export const updateSystemConfig = async (req: AuthRequest, res: Response) => {
     res.json({ success: true, config });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+// ==========================================
+// ADMIN REAL-TIME READ-ONLY ACCOUNT ACCESS
+// ==========================================
+
+// Get comprehensive real-time customer account details (READ-ONLY)
+export const getCustomerAccountDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const customer = await prisma.consumerProfile.findUnique({
+      where: { id: Number(id) },
+      include: {
+        user: true,
+        wallets: {
+          include: {
+            walletTransactions: {
+              orderBy: { createdAt: 'desc' },
+              take: 50
+            }
+          }
+        },
+        nfcCards: true,
+        gasMeters: true,
+        gasTopups: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            gasMeter: true
+          }
+        },
+        gasRewards: {
+          orderBy: { createdAt: 'desc' },
+          take: 50
+        },
+        loans: {
+          orderBy: { createdAt: 'desc' }
+        },
+        sales: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            retailerProfile: {
+              select: { shopName: true, id: true }
+            },
+            saleItems: {
+              include: {
+                product: true
+              }
+            }
+          }
+        },
+        customerOrders: {
+          orderBy: { createdAt: 'desc' },
+          take: 50
+        }
+      }
+    });
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found' });
+    }
+
+    // Calculate wallet balances
+    const walletSummary = {
+      dashboardWallet: customer.wallets.find(w => w.type === 'dashboard_wallet')?.balance || 0,
+      rewardsWallet: customer.wallets.find(w => w.type === 'rewards_wallet')?.balance || 0,
+      gasRewardsWallet: customer.wallets.find(w => w.type === 'gas_rewards_wallet')?.balance || 0,
+      creditWallet: customer.wallets.find(w => w.type === 'credit_wallet')?.balance || 0
+    };
+
+    // Order statistics
+    const orderStats = {
+      pending: customer.sales.filter(s => s.status === 'pending').length,
+      active: customer.sales.filter(s => s.status === 'processing' || s.status === 'active').length,
+      completed: customer.sales.filter(s => s.status === 'completed' || s.status === 'delivered').length,
+      cancelled: customer.sales.filter(s => s.status === 'cancelled').length,
+      total: customer.sales.length
+    };
+
+    // Get all transactions from all wallets
+    const allTransactions = customer.wallets.flatMap(w =>
+      w.walletTransactions.map(t => ({
+        ...t,
+        walletType: w.type
+      }))
+    ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Gas usage summary
+    const gasUsage = {
+      totalTopups: customer.gasTopups.length,
+      totalAmount: customer.gasTopups.reduce((sum, g) => sum + g.amount, 0),
+      totalUnits: customer.gasTopups.reduce((sum, g) => sum + g.units, 0),
+      totalRewards: customer.gasRewards.reduce((sum, r) => sum + r.units, 0)
+    };
+
+    // Last order details
+    const lastOrder = customer.sales.length > 0 ? customer.sales[0] : null;
+
+    // Supplier chain - find linked retailers from sales
+    const linkedRetailers = [...new Set(customer.sales.map(s => s.retailerProfile?.id).filter(Boolean))];
+    const supplierChain = await prisma.retailerProfile.findMany({
+      where: { id: { in: linkedRetailers as number[] } },
+      include: {
+        linkedWholesaler: {
+          select: { id: true, companyName: true }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      accountDetails: {
+        profile: {
+          id: customer.id,
+          userId: customer.userId,
+          fullName: customer.fullName,
+          phone: customer.user.phone,
+          email: customer.user.email,
+          membershipType: customer.membershipType,
+          isVerified: customer.isVerified,
+          isActive: customer.user.isActive,
+          createdAt: customer.user.createdAt
+        },
+        walletSummary,
+        wallets: customer.wallets.map(w => ({
+          id: w.id,
+          type: w.type,
+          balance: w.balance,
+          currency: w.currency
+        })),
+        orderStats,
+        orders: customer.sales,
+        transactionHistory: allTransactions,
+        nfcCards: customer.nfcCards.map(card => ({
+          id: card.id,
+          uid: card.uid,
+          status: card.status,
+          balance: card.balance,
+          cardType: card.cardType,
+          createdAt: card.createdAt
+        })),
+        gasMeters: customer.gasMeters,
+        gasUsage,
+        gasTopups: customer.gasTopups,
+        gasRewards: customer.gasRewards,
+        loans: customer.loans.map(loan => ({
+          id: loan.id,
+          amount: loan.amount,
+          status: loan.status,
+          dueDate: loan.dueDate,
+          createdAt: loan.createdAt
+        })),
+        lastOrder,
+        supplierChain: supplierChain.map(r => ({
+          retailerId: r.id,
+          retailerName: r.shopName,
+          wholesalerId: r.linkedWholesaler?.id,
+          wholesalerName: r.linkedWholesaler?.companyName
+        }))
+      }
+    });
+  } catch (error: any) {
+    console.error('Get Customer Account Details Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get comprehensive real-time retailer account details (READ-ONLY)
+export const getRetailerAccountDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const retailer = await prisma.retailerProfile.findUnique({
+      where: { id: Number(id) },
+      include: {
+        user: true,
+        credit: true,
+        linkedWholesaler: {
+          select: { id: true, companyName: true, user: { select: { phone: true, email: true } } }
+        },
+        branches: {
+          include: { terminals: true }
+        },
+        nfcCards: true,
+        orders: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            wholesalerProfile: { select: { companyName: true } },
+            orderItems: { include: { product: true } }
+          }
+        },
+        sales: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            consumerProfile: { select: { fullName: true } },
+            saleItems: { include: { product: true } }
+          }
+        },
+        creditRequests: {
+          orderBy: { createdAt: 'desc' }
+        },
+        inventory: {
+          take: 100
+        }
+      }
+    });
+
+    if (!retailer) {
+      return res.status(404).json({ success: false, error: 'Retailer not found' });
+    }
+
+    // Order statistics (orders TO wholesalers)
+    const orderStats = {
+      pending: retailer.orders.filter(o => o.status === 'pending').length,
+      active: retailer.orders.filter(o => o.status === 'processing' || o.status === 'active').length,
+      completed: retailer.orders.filter(o => o.status === 'completed' || o.status === 'delivered').length,
+      cancelled: retailer.orders.filter(o => o.status === 'cancelled').length,
+      total: retailer.orders.length
+    };
+
+    // Sales statistics (sales TO consumers)
+    const salesStats = {
+      pending: retailer.sales.filter(s => s.status === 'pending').length,
+      completed: retailer.sales.filter(s => s.status === 'completed' || s.status === 'delivered').length,
+      cancelled: retailer.sales.filter(s => s.status === 'cancelled').length,
+      total: retailer.sales.length,
+      totalRevenue: retailer.sales.reduce((sum, s) => sum + s.totalAmount, 0)
+    };
+
+    // Credit summary
+    const creditSummary = retailer.credit ? {
+      creditLimit: retailer.credit.creditLimit,
+      usedCredit: retailer.credit.usedCredit,
+      availableCredit: retailer.credit.availableCredit
+    } : {
+      creditLimit: retailer.creditLimit,
+      usedCredit: 0,
+      availableCredit: retailer.creditLimit
+    };
+
+    // Last order details
+    const lastOrder = retailer.orders.length > 0 ? retailer.orders[0] : null;
+
+    res.json({
+      success: true,
+      accountDetails: {
+        profile: {
+          id: retailer.id,
+          userId: retailer.userId,
+          shopName: retailer.shopName,
+          address: retailer.address,
+          phone: retailer.user.phone,
+          email: retailer.user.email,
+          isVerified: retailer.isVerified,
+          isActive: retailer.user.isActive,
+          createdAt: retailer.user.createdAt
+        },
+        walletBalance: retailer.walletBalance,
+        creditSummary,
+        orderStats,
+        orders: retailer.orders,
+        salesStats,
+        sales: retailer.sales,
+        nfcCards: retailer.nfcCards.map(card => ({
+          id: card.id,
+          uid: card.uid,
+          status: card.status,
+          balance: card.balance,
+          cardType: card.cardType,
+          createdAt: card.createdAt
+        })),
+        branches: retailer.branches,
+        inventory: {
+          totalProducts: retailer.inventory.length,
+          lowStock: retailer.inventory.filter(p => p.lowStockThreshold && p.stock <= p.lowStockThreshold).length,
+          outOfStock: retailer.inventory.filter(p => p.stock === 0).length
+        },
+        creditRequests: retailer.creditRequests,
+        lastOrder,
+        linkedWholesaler: retailer.linkedWholesaler ? {
+          id: retailer.linkedWholesaler.id,
+          companyName: retailer.linkedWholesaler.companyName,
+          phone: retailer.linkedWholesaler.user?.phone,
+          email: retailer.linkedWholesaler.user?.email
+        } : null
+      }
+    });
+  } catch (error: any) {
+    console.error('Get Retailer Account Details Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get comprehensive real-time worker/employee account details (READ-ONLY)
+export const getWorkerAccountDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const employee = await prisma.employeeProfile.findUnique({
+      where: { id: Number(id) },
+      include: {
+        user: true,
+        attendances: {
+          orderBy: { date: 'desc' },
+          take: 30
+        },
+        leaveRequests: {
+          orderBy: { createdAt: 'desc' }
+        },
+        billPayments: {
+          orderBy: { createdAt: 'desc' }
+        },
+        enrollments: {
+          include: {
+            course: true,
+            lessonProgress: true
+          }
+        },
+        assignedTasks: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            project: true
+          }
+        },
+        projectMembers: {
+          include: {
+            project: true
+          }
+        }
+      }
+    });
+
+    if (!employee) {
+      return res.status(404).json({ success: false, error: 'Employee not found' });
+    }
+
+    // Attendance summary
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
+
+    const monthlyAttendance = employee.attendances.filter(a => new Date(a.date) >= thisMonth);
+    const attendanceSummary = {
+      presentDays: monthlyAttendance.filter(a => a.status === 'present').length,
+      absentDays: monthlyAttendance.filter(a => a.status === 'absent').length,
+      lateDays: monthlyAttendance.filter(a => a.status === 'late').length,
+      totalWorkHours: monthlyAttendance.reduce((sum, a) => sum + a.workHours, 0)
+    };
+
+    // Task statistics
+    const taskStats = {
+      todo: employee.assignedTasks.filter(t => t.status === 'TODO').length,
+      inProgress: employee.assignedTasks.filter(t => t.status === 'IN_PROGRESS').length,
+      completed: employee.assignedTasks.filter(t => t.status === 'COMPLETED').length,
+      total: employee.assignedTasks.length
+    };
+
+    // Training progress
+    const trainingProgress = employee.enrollments.map(e => ({
+      courseId: e.courseId,
+      courseTitle: e.course.title,
+      progress: e.progress,
+      status: e.status,
+      completedLessons: e.lessonProgress.filter(lp => lp.completed).length,
+      totalLessons: e.course.totalLessons
+    }));
+
+    res.json({
+      success: true,
+      accountDetails: {
+        profile: {
+          id: employee.id,
+          userId: employee.userId,
+          employeeNumber: employee.employeeNumber,
+          name: employee.user.name,
+          phone: employee.user.phone,
+          email: employee.user.email,
+          department: employee.department,
+          position: employee.position,
+          joiningDate: employee.joiningDate,
+          status: employee.status,
+          isActive: employee.user.isActive
+        },
+        salary: employee.salary,
+        bankAccount: employee.bankAccount,
+        attendanceSummary,
+        recentAttendance: employee.attendances,
+        leaveRequests: employee.leaveRequests,
+        taskStats,
+        tasks: employee.assignedTasks,
+        projects: employee.projectMembers.map(pm => ({
+          projectId: pm.project.id,
+          projectName: pm.project.name,
+          role: pm.role,
+          status: pm.project.status,
+          progress: pm.project.progress
+        })),
+        trainingProgress,
+        billPayments: employee.billPayments
+      }
+    });
+  } catch (error: any) {
+    console.error('Get Worker Account Details Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get wholesaler account details with linked retailers (READ-ONLY)
+export const getWholesalerAccountDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const wholesaler = await prisma.wholesalerProfile.findUnique({
+      where: { id: Number(id) },
+      include: {
+        user: true,
+        linkedRetailers: {
+          include: {
+            user: { select: { phone: true, email: true, isActive: true } },
+            credit: true
+          }
+        },
+        receivedOrders: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: {
+            retailerProfile: { select: { shopName: true } },
+            orderItems: { include: { product: true } }
+          }
+        },
+        inventory: {
+          take: 100
+        },
+        suppliers: {
+          include: {
+            supplierPayments: {
+              orderBy: { paymentDate: 'desc' },
+              take: 10
+            }
+          }
+        },
+        supplierPayments: {
+          orderBy: { paymentDate: 'desc' },
+          take: 50
+        }
+      }
+    });
+
+    if (!wholesaler) {
+      return res.status(404).json({ success: false, error: 'Wholesaler not found' });
+    }
+
+    // Order statistics
+    const orderStats = {
+      pending: wholesaler.receivedOrders.filter(o => o.status === 'pending').length,
+      active: wholesaler.receivedOrders.filter(o => o.status === 'processing').length,
+      completed: wholesaler.receivedOrders.filter(o => o.status === 'completed').length,
+      cancelled: wholesaler.receivedOrders.filter(o => o.status === 'cancelled').length,
+      total: wholesaler.receivedOrders.length,
+      totalRevenue: wholesaler.receivedOrders.reduce((sum, o) => sum + o.totalAmount, 0)
+    };
+
+    // Last order
+    const lastOrder = wholesaler.receivedOrders.length > 0 ? wholesaler.receivedOrders[0] : null;
+
+    res.json({
+      success: true,
+      accountDetails: {
+        profile: {
+          id: wholesaler.id,
+          userId: wholesaler.userId,
+          companyName: wholesaler.companyName,
+          contactPerson: wholesaler.contactPerson,
+          tinNumber: wholesaler.tinNumber,
+          address: wholesaler.address,
+          phone: wholesaler.user.phone,
+          email: wholesaler.user.email,
+          isVerified: wholesaler.isVerified,
+          isActive: wholesaler.user.isActive,
+          createdAt: wholesaler.user.createdAt
+        },
+        linkedRetailers: wholesaler.linkedRetailers.map(r => ({
+          id: r.id,
+          shopName: r.shopName,
+          phone: r.user.phone,
+          email: r.user.email,
+          isActive: r.user.isActive,
+          creditLimit: r.credit?.creditLimit || r.creditLimit,
+          usedCredit: r.credit?.usedCredit || 0
+        })),
+        orderStats,
+        orders: wholesaler.receivedOrders,
+        inventory: {
+          totalProducts: wholesaler.inventory.length,
+          lowStock: wholesaler.inventory.filter(p => p.lowStockThreshold && p.stock <= p.lowStockThreshold).length,
+          outOfStock: wholesaler.inventory.filter(p => p.stock === 0).length
+        },
+        suppliers: wholesaler.suppliers,
+        supplierPayments: wholesaler.supplierPayments,
+        lastOrder
+      }
+    });
+  } catch (error: any) {
+    console.error('Get Wholesaler Account Details Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ==========================================
+// WHOLESALER-RETAILER LINKING (ACCOUNT LINKING ENFORCEMENT)
+// ==========================================
+
+// Get retailer-wholesaler linkage for admin panel
+export const getRetailerWholesalerLinkage = async (req: AuthRequest, res: Response) => {
+  try {
+    const retailers = await prisma.retailerProfile.findMany({
+      include: {
+        user: { select: { phone: true, email: true, isActive: true } },
+        linkedWholesaler: {
+          select: { id: true, companyName: true, user: { select: { phone: true } } }
+        }
+      }
+    });
+
+    const wholesalers = await prisma.wholesalerProfile.findMany({
+      include: {
+        user: { select: { phone: true, email: true, isActive: true } },
+        linkedRetailers: {
+          select: { id: true, shopName: true }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      linkage: {
+        retailers: retailers.map(r => ({
+          id: r.id,
+          shopName: r.shopName,
+          phone: r.user.phone,
+          isActive: r.user.isActive,
+          linkedWholesalerId: r.linkedWholesalerId,
+          linkedWholesalerName: r.linkedWholesaler?.companyName || null
+        })),
+        wholesalers: wholesalers.map(w => ({
+          id: w.id,
+          companyName: w.companyName,
+          phone: w.user.phone,
+          isActive: w.user.isActive,
+          linkedRetailersCount: w.linkedRetailers.length,
+          linkedRetailers: w.linkedRetailers
+        }))
+      }
+    });
+  } catch (error: any) {
+    console.error('Get Retailer-Wholesaler Linkage Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Link retailer to wholesaler (Admin function)
+export const linkRetailerToWholesaler = async (req: AuthRequest, res: Response) => {
+  try {
+    const { retailerId, wholesalerId } = req.body;
+
+    if (!retailerId || !wholesalerId) {
+      return res.status(400).json({ success: false, error: 'Both retailerId and wholesalerId are required' });
+    }
+
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(retailerId) } });
+    if (!retailer) {
+      return res.status(404).json({ success: false, error: 'Retailer not found' });
+    }
+
+    const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(wholesalerId) } });
+    if (!wholesaler) {
+      return res.status(404).json({ success: false, error: 'Wholesaler not found' });
+    }
+
+    // Check if retailer is already linked to a different wholesaler
+    if (retailer.linkedWholesalerId && retailer.linkedWholesalerId !== Number(wholesalerId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Retailer is already linked to another wholesaler. Unlink first before linking to a new one.'
+      });
+    }
+
+    await prisma.retailerProfile.update({
+      where: { id: Number(retailerId) },
+      data: { linkedWholesalerId: Number(wholesalerId) }
+    });
+
+    res.json({ success: true, message: 'Retailer successfully linked to wholesaler' });
+  } catch (error: any) {
+    console.error('Link Retailer to Wholesaler Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Unlink retailer from wholesaler (Admin function)
+export const unlinkRetailerFromWholesaler = async (req: AuthRequest, res: Response) => {
+  try {
+    const { retailerId } = req.body;
+
+    if (!retailerId) {
+      return res.status(400).json({ success: false, error: 'retailerId is required' });
+    }
+
+    const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(retailerId) } });
+    if (!retailer) {
+      return res.status(404).json({ success: false, error: 'Retailer not found' });
+    }
+
+    await prisma.retailerProfile.update({
+      where: { id: Number(retailerId) },
+      data: { linkedWholesalerId: null }
+    });
+
+    res.json({ success: true, message: 'Retailer successfully unlinked from wholesaler' });
+  } catch (error: any) {
+    console.error('Unlink Retailer from Wholesaler Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ==========================================
+// SETTLEMENT INVOICE MANAGEMENT
+// ==========================================
+
+// Get all settlement invoices with filters
+export const getSettlementInvoices = async (req: AuthRequest, res: Response) => {
+  try {
+    const { month, partyType, partyId } = req.query;
+
+    const where: any = {};
+    if (month) where.settlementMonth = month as string;
+    if (partyType) where.partyType = partyType as string;
+    if (partyId) {
+      if (partyType === 'retailer') {
+        where.retailerId = Number(partyId);
+      } else if (partyType === 'wholesaler') {
+        where.wholesalerId = Number(partyId);
+      }
+    }
+
+    const invoices = await prisma.settlementInvoice.findMany({
+      where,
+      include: {
+        retailerProfile: { select: { id: true, shopName: true } },
+        wholesalerProfile: { select: { id: true, companyName: true } }
+      },
+      orderBy: [{ settlementMonth: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const formattedInvoices = invoices.map(inv => ({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      partyType: inv.partyType,
+      partyId: inv.partyType === 'retailer' ? inv.retailerId : inv.wholesalerId,
+      partyName: inv.partyType === 'retailer'
+        ? inv.retailerProfile?.shopName
+        : inv.wholesalerProfile?.companyName,
+      settlementMonth: inv.settlementMonth,
+      totalAmount: inv.totalAmount,
+      invoiceFileUrl: inv.invoiceFileUrl,
+      notes: inv.notes,
+      uploadedBy: inv.uploadedBy,
+      uploadedAt: inv.createdAt
+    }));
+
+    res.json({ success: true, invoices: formattedInvoices });
+  } catch (error: any) {
+    console.error('Get Settlement Invoices Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Create/upload a settlement invoice
+export const createSettlementInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const { partyType, partyId, settlementMonth, totalAmount, invoiceFileUrl, notes } = req.body;
+    const uploadedBy = req.user?.id;
+
+    if (!partyType || !partyId || !settlementMonth || totalAmount === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'partyType, partyId, settlementMonth, and totalAmount are required'
+      });
+    }
+
+    if (partyType !== 'retailer' && partyType !== 'wholesaler') {
+      return res.status(400).json({ success: false, error: 'partyType must be "retailer" or "wholesaler"' });
+    }
+
+    // Validate party exists
+    if (partyType === 'retailer') {
+      const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(partyId) } });
+      if (!retailer) return res.status(404).json({ success: false, error: 'Retailer not found' });
+    } else {
+      const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(partyId) } });
+      if (!wholesaler) return res.status(404).json({ success: false, error: 'Wholesaler not found' });
+    }
+
+    // Generate invoice number
+    const count = await prisma.settlementInvoice.count();
+    const invoiceNumber = `INV-${settlementMonth}-${(count + 1).toString().padStart(4, '0')}`;
+
+    const invoice = await prisma.settlementInvoice.create({
+      data: {
+        invoiceNumber,
+        partyType,
+        retailerId: partyType === 'retailer' ? Number(partyId) : null,
+        wholesalerId: partyType === 'wholesaler' ? Number(partyId) : null,
+        settlementMonth,
+        totalAmount: Number(totalAmount),
+        invoiceFileUrl,
+        notes,
+        uploadedBy: uploadedBy || 0
+      },
+      include: {
+        retailerProfile: { select: { shopName: true } },
+        wholesalerProfile: { select: { companyName: true } }
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Settlement invoice created successfully',
+      invoice: {
+        ...invoice,
+        partyName: partyType === 'retailer'
+          ? invoice.retailerProfile?.shopName
+          : invoice.wholesalerProfile?.companyName
+      }
+    });
+  } catch (error: any) {
+    console.error('Create Settlement Invoice Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get single settlement invoice
+export const getSettlementInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const invoice = await prisma.settlementInvoice.findUnique({
+      where: { id: Number(id) },
+      include: {
+        retailerProfile: { select: { id: true, shopName: true, user: { select: { phone: true, email: true } } } },
+        wholesalerProfile: { select: { id: true, companyName: true, user: { select: { phone: true, email: true } } } }
+      }
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ success: false, error: 'Invoice not found' });
+    }
+
+    res.json({ success: true, invoice });
+  } catch (error: any) {
+    console.error('Get Settlement Invoice Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Update settlement invoice
+export const updateSettlementInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { totalAmount, invoiceFileUrl, notes } = req.body;
+
+    const invoice = await prisma.settlementInvoice.update({
+      where: { id: Number(id) },
+      data: {
+        totalAmount: totalAmount !== undefined ? Number(totalAmount) : undefined,
+        invoiceFileUrl,
+        notes
+      }
+    });
+
+    res.json({ success: true, message: 'Invoice updated successfully', invoice });
+  } catch (error: any) {
+    console.error('Update Settlement Invoice Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Delete settlement invoice
+export const deleteSettlementInvoice = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.settlementInvoice.delete({ where: { id: Number(id) } });
+
+    res.json({ success: true, message: 'Invoice deleted successfully' });
+  } catch (error: any) {
+    console.error('Delete Settlement Invoice Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };

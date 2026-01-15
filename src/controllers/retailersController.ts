@@ -6,7 +6,8 @@ import prisma from '../utils/prisma';
 // RETAILERS MANAGEMENT
 // ============================================
 
-// Get all retailers
+// Get all retailers linked to this wholesaler
+// Uses BOTH linking methods for consistency with /linked-retailers API
 export const getRetailers = async (req: AuthRequest, res: Response) => {
     try {
         console.log('🏪 Fetching retailers for user:', req.user?.id);
@@ -19,32 +20,68 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
 
-        // Get all retailers who have placed orders with this wholesaler
-        const orders = await prisma.order.findMany({
-            where: { wholesalerId: wholesalerProfile.id },
+        // Get ALL linked retailers using BOTH methods:
+        // 1. Via LinkRequest table (new method) - status = 'approved'
+        // 2. Via linkedWholesalerId field (old method) - for backwards compatibility
+
+        // Method 1: Get retailers from approved LinkRequest entries
+        const approvedRequests = await prisma.linkRequest.findMany({
+            where: {
+                wholesalerId: wholesalerProfile.id,
+                status: 'approved'
+            },
             include: {
-                retailerProfile: {
+                retailer: {
                     include: {
                         user: true,
-                        credit: true
+                        credit: true,
+                        orders: {
+                            where: { wholesalerId: wholesalerProfile.id }
+                        }
                     }
                 }
-            },
-            distinct: ['retailerId']
+            }
         });
 
-        // Extract unique retailers
-        const retailersMap = new Map();
-        for (const order of orders) {
-            if (!retailersMap.has(order.retailerId)) {
-                retailersMap.set(order.retailerId, order.retailerProfile);
+        // Method 2: Get retailers with linkedWholesalerId set (old method)
+        const directlyLinkedRetailers = await prisma.retailerProfile.findMany({
+            where: {
+                linkedWholesalerId: wholesalerProfile.id
+            },
+            include: {
+                user: true,
+                credit: true,
+                orders: {
+                    where: { wholesalerId: wholesalerProfile.id }
+                }
             }
-        }
+        });
 
-        const retailers = Array.from(retailersMap.values());
+        // Combine both lists and remove duplicates
+        const retailerIdsFromRequests = new Set(approvedRequests.map(req => req.retailer.id));
 
-        console.log(`✅ Found ${retailers.length} retailers`);
-        res.json({ retailers, count: retailers.length });
+        // Format retailers from LinkRequest
+        const retailersFromRequests = approvedRequests.map(req => ({
+            ...req.retailer,
+            totalOrders: req.retailer.orders.length,
+            totalRevenue: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0),
+            linkMethod: 'request'
+        }));
+
+        // Format retailers from direct link (exclude duplicates)
+        const retailersFromDirect = directlyLinkedRetailers
+            .filter(r => !retailerIdsFromRequests.has(r.id))
+            .map(r => ({
+                ...r,
+                totalOrders: r.orders.length,
+                totalRevenue: r.orders.reduce((sum, o) => sum + o.totalAmount, 0),
+                linkMethod: 'direct'
+            }));
+
+        const allRetailers = [...retailersFromRequests, ...retailersFromDirect];
+
+        console.log(`✅ Found ${allRetailers.length} retailers (${approvedRequests.length} from LinkRequest, ${directlyLinkedRetailers.length} from direct link)`);
+        res.json({ retailers: allRetailers, count: allRetailers.length });
     } catch (error: any) {
         console.error('❌ Error fetching retailers:', error);
         res.status(500).json({ error: error.message });
@@ -52,6 +89,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
 };
 
 // Get retailer stats
+// Uses BOTH linking methods for consistency with /linked-retailers and /retailers APIs
 export const getRetailerStats = async (req: AuthRequest, res: Response) => {
     try {
         const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
@@ -62,25 +100,51 @@ export const getRetailerStats = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
 
-        // Get all orders to find unique retailers
-        const orders = await prisma.order.findMany({
-            where: { wholesalerId: wholesalerProfile.id },
-            include: { retailerProfile: true }
+        // Get ALL linked retailers using BOTH methods:
+        // 1. Via LinkRequest table (new method) - status = 'approved'
+        // 2. Via linkedWholesalerId field (old method) - for backwards compatibility
+
+        const [approvedRequests, directlyLinkedRetailers] = await Promise.all([
+            prisma.linkRequest.findMany({
+                where: {
+                    wholesalerId: wholesalerProfile.id,
+                    status: 'approved'
+                },
+                select: { retailerId: true }
+            }),
+            prisma.retailerProfile.findMany({
+                where: {
+                    linkedWholesalerId: wholesalerProfile.id
+                },
+                select: { id: true }
+            })
+        ]);
+
+        // Combine and deduplicate
+        const retailerIdsFromRequests = new Set(approvedRequests.map(r => r.retailerId));
+        const allLinkedRetailerIds = new Set([
+            ...retailerIdsFromRequests,
+            ...directlyLinkedRetailers.map(r => r.id)
+        ]);
+
+        const totalRetailers = allLinkedRetailerIds.size;
+
+        // Get retailers with orders (active retailers)
+        const retailersWithOrders = await prisma.order.findMany({
+            where: {
+                wholesalerId: wholesalerProfile.id,
+                retailerId: { in: Array.from(allLinkedRetailerIds) }
+            },
+            distinct: ['retailerId'],
+            select: { retailerId: true }
         });
 
-        const uniqueRetailers = new Set(orders.map(o => o.retailerId));
-        const totalRetailers = uniqueRetailers.size;
+        const activeRetailers = retailersWithOrders.length;
 
-        // Get credit data
+        // Get credit data for linked retailers
         const creditData = await prisma.retailerCredit.findMany({
             where: {
-                retailerProfile: {
-                    orders: {
-                        some: {
-                            wholesalerId: wholesalerProfile.id
-                        }
-                    }
-                }
+                retailerId: { in: Array.from(allLinkedRetailerIds) }
             }
         });
 
@@ -92,7 +156,7 @@ export const getRetailerStats = async (req: AuthRequest, res: Response) => {
 
         res.json({
             total_retailers: totalRetailers,
-            active_retailers: totalRetailers, // All are active if they have orders
+            active_retailers: activeRetailers,
             credit_extended: totalCreditExtended,
             credit_utilization_percentage: creditUtilization
         });

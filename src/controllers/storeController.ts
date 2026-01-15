@@ -3,10 +3,18 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
 
 // Create a new retail order
+// UPDATED: Reward Gas can now be applied as partial discount during payment
+// REQUIREMENT #3: Customer must be linked to retailer before ordering
 export const createOrder = async (req: AuthRequest, res: Response) => {
   try {
-    const { retailerId, items, paymentMethod, total } = req.body;
+    const { retailerId, items, paymentMethod, total, applyRewardGas, rewardGasAmount } = req.body;
     const userId = req.user!.id;
+
+    // ==========================================
+    // REWARD GAS CAN BE APPLIED AS PARTIAL DISCOUNT
+    // Customer can apply reward gas (in RWF value) to reduce the order total
+    // Remaining amount is paid via wallet, NFC, or mobile money
+    // ==========================================
 
     const consumerProfile = await prisma.consumerProfile.findUnique({
       where: { userId }
@@ -16,36 +24,111 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Consumer profile not found' });
     }
 
+    // ==========================================
+    // ACCOUNT LINKING ENFORCEMENT (REQUIREMENT #3)
+    // Customer MUST be approved by the retailer before placing orders
+    // NEW LOGIC: Customer can be linked to MULTIPLE retailers
+    // ==========================================
+    if (!retailerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Retailer ID is required to place an order.'
+      });
+    }
+
+    // Check if customer is APPROVED by this specific retailer
+    const approvalStatus = await prisma.customerLinkRequest.findUnique({
+      where: {
+        customerId_retailerId: {
+          customerId: consumerProfile.id,
+          retailerId: parseInt(retailerId)
+        }
+      }
+    });
+
+    if (!approvalStatus || approvalStatus.status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        error: 'You must be approved by this retailer before placing orders. Please send a link request and wait for approval.',
+        requiresLinking: true,
+        requestStatus: approvalStatus?.status || null
+      });
+    }
+
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Order must contain items' });
     }
 
+    // Calculate amount to pay after reward gas discount
+    let amountToPay = total;
+    let rewardGasApplied = 0;
+
+    // Apply Reward Gas if requested
+    if (applyRewardGas && rewardGasAmount > 0) {
+      // Get customer's gas reward balance (in RWF)
+      const gasRewards = await prisma.gasReward.findMany({
+        where: { consumerId: consumerProfile.id }
+      });
+
+      // Calculate total reward gas balance in RWF (units * 300 RWF per unit)
+      const totalGasUnits = gasRewards.reduce((sum, r) => sum + r.units, 0);
+      const totalGasRwf = totalGasUnits * 300; // 300 RWF per M³
+
+      if (rewardGasAmount > totalGasRwf) {
+        return res.status(400).json({
+          success: false,
+          error: `Insufficient reward gas balance. Available: ${totalGasRwf} RWF`
+        });
+      }
+
+      // Apply the discount
+      rewardGasApplied = Math.min(rewardGasAmount, total);
+      amountToPay = total - rewardGasApplied;
+    }
+
     const result = await prisma.$transaction(async (prisma) => {
-      // 1. Process Payment
-      if (paymentMethod === 'wallet') {
+      // 1. Deduct Reward Gas if applied
+      if (rewardGasApplied > 0) {
+        const gasUnitsToDeduct = rewardGasApplied / 300; // Convert RWF to gas units
+
+        // Create negative gas reward entry (deduction)
+        await prisma.gasReward.create({
+          data: {
+            consumerId: consumerProfile.id,
+            units: -gasUnitsToDeduct,
+            source: 'order_payment',
+            reference: `Order payment discount`
+          }
+        });
+      }
+
+      // 2. Process remaining payment (after reward gas discount)
+      if (paymentMethod === 'wallet' && amountToPay > 0) {
         const wallet = await prisma.wallet.findFirst({
           where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
         });
 
-        if (!wallet || wallet.balance < total) {
-          throw new Error('Insufficient wallet balance');
+        if (!wallet || wallet.balance < amountToPay) {
+          throw new Error(`Insufficient wallet balance. Required: ${amountToPay} RWF`);
         }
 
         await prisma.wallet.update({
           where: { id: wallet.id },
-          data: { balance: { decrement: total } }
+          data: { balance: { decrement: amountToPay } }
         });
 
         await prisma.walletTransaction.create({
           data: {
             walletId: wallet.id,
             type: 'purchase',
-            amount: -total,
-            description: `Payment to Retailer`,
+            amount: -amountToPay,
+            description: rewardGasApplied > 0
+              ? `Payment to Retailer (${rewardGasApplied} RWF paid with Reward Gas)`
+              : `Payment to Retailer`,
             status: 'completed'
           }
         });
-      } else if (paymentMethod === 'nfc_card') {
+      } else if (paymentMethod === 'nfc_card' && amountToPay > 0) {
         const { cardId } = req.body;
         if (!cardId) throw new Error('Card ID is required for NFC payment');
 
@@ -57,20 +140,16 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           throw new Error('Invalid NFC card');
         }
 
-        if (card.balance < total) {
-          throw new Error('Insufficient card balance');
+        if (card.balance < amountToPay) {
+          throw new Error(`Insufficient card balance. Required: ${amountToPay} RWF`);
         }
 
         await prisma.nfcCard.update({
           where: { id: card.id },
-          data: { balance: { decrement: total } }
+          data: { balance: { decrement: amountToPay } }
         });
-        
-        // Optionally record a transaction log if needed, for now just decrement
-      } else if (paymentMethod !== 'mobile_money') {
-         // If generic or unknown, maybe default to pending payment?
-         // For now, let's allow mobile_money to pass as "pending" transaction logic (handled externally)
-         // But if it's completely unknown, maybe valid?
+      } else if (paymentMethod !== 'mobile_money' && amountToPay > 0) {
+         // For mobile_money or unknown methods, payment is handled externally
       }
 
       // 2. Create Sale Record
@@ -115,38 +194,100 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 // Get retailers with location filtering
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
-    const { district, sector, cell } = req.query;
+    const { district, sector, cell, search } = req.query;
     const where: any = {};
+    // Show ALL retailers so customers can discover and send link requests
 
+    // Location-based filtering
     if (district || sector || cell) {
-        const conditions = [];
+        const conditions: any[] = [];
         if (district) conditions.push({ address: { contains: district as string } });
-        // Note: For partial matches on unstructured addresses, simple contains is best effort
         if (sector) conditions.push({ address: { contains: sector as string } });
         if (cell) conditions.push({ address: { contains: cell as string } });
-        
+
         if (conditions.length > 0) {
             where.AND = conditions;
         }
     }
 
-    let retailers = await prisma.retailerProfile.findMany({
+    // Search by shop name
+    if (search) {
+      where.shopName = { contains: search as string };
+    }
+
+    const retailers = await prisma.retailerProfile.findMany({
       where,
-      include: { user: true }
+      include: {
+        user: {
+          select: {
+            phone: true,
+            email: true,
+            isActive: true,
+          }
+        },
+        // Get products with stock > 0
+        inventory: {
+          where: { stock: { gt: 0 } },
+          select: { id: true }
+        },
+        // Get linked wholesaler info
+        linkedWholesaler: {
+          select: {
+            companyName: true,
+          }
+        }
+      }
     });
 
-    // Fallback: If strict location filtering returns no results, return all retailers
-    // This allows users to "just enter any location" and still see stores to proceed.
-    if (retailers.length === 0 && (district || sector || cell)) {
-        retailers = await prisma.retailerProfile.findMany({
-            include: { user: true },
-            take: 10 // Limit fallback results
+    // Filter only active retailers
+    let activeRetailers = retailers.filter(r => r.user?.isActive);
+
+    // Fallback: If strict location filtering returns no results, return all verified retailers
+    if (activeRetailers.length === 0 && (district || sector || cell)) {
+        const fallbackRetailers = await prisma.retailerProfile.findMany({
+            where: { isVerified: true },
+            include: {
+              user: {
+                select: {
+                  phone: true,
+                  email: true,
+                  isActive: true,
+                }
+              },
+              inventory: {
+                where: { stock: { gt: 0 } },
+                select: { id: true }
+              },
+              linkedWholesaler: {
+                select: {
+                  companyName: true,
+                }
+              }
+            },
+            take: 20
         });
+        activeRetailers = fallbackRetailers.filter(r => r.user?.isActive);
     }
-    
-    res.json({ retailers });
+
+    // Format response with useful info for customers
+    const formattedRetailers = activeRetailers.map(r => ({
+      id: r.id,
+      shopName: r.shopName,
+      address: r.address,
+      phone: r.user?.phone,
+      email: r.user?.email,
+      isVerified: r.isVerified,
+      productCount: r.inventory?.length || 0,
+      wholesaler: r.linkedWholesaler?.companyName || null,
+    }));
+
+    res.json({
+      success: true,
+      retailers: formattedRetailers,
+      total: formattedRetailers.length
+    });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -161,26 +302,106 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get products
+// Get products for Customer
+// NEW LOGIC:
+// - Customer can view products of ANY retailer (READ-ONLY for discovery)
+// - Customer can ONLY BUY from linked retailer
+// - If viewing specific retailer (retailerId param), show their products
+// - If no retailerId, show linked retailer's products (if linked)
 export const getProducts = async (req: AuthRequest, res: Response) => {
   try {
-    const { retailerId, category, search } = req.query;
+    const { category, search, retailerId } = req.query;
     const where: any = {};
 
-    if (retailerId) {
-        const parsedId = Number(retailerId);
-        if (isNaN(parsedId)) {
-            // If retailerId is not a number (e.g. legacy UUID), return empty
-            return res.json({ products: [] }); 
-        }
-        where.retailerId = parsedId;
+    // Check if user is authenticated
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Please login to view products',
+        products: []
+      });
     }
-    
+
+    // Check if user is a consumer
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!consumerProfile) {
+      return res.status(403).json({
+        success: false,
+        error: 'This endpoint is for customers only',
+        products: []
+      });
+    }
+
+    // NEW LOGIC: Customer can be linked to MULTIPLE retailers
+    // canBuy is determined per-retailer based on CustomerLinkRequest approval status
+    let canBuy = false;
+    let viewingRetailerId: number | null = null;
+    let isApprovedForThisRetailer = false;
+
+    // Case 1: Viewing specific retailer's products (for discovery)
+    if (retailerId) {
+      viewingRetailerId = parseInt(retailerId as string);
+      where.retailerId = viewingRetailerId;
+
+      // Check if customer is APPROVED by this specific retailer
+      const approvalStatus = await prisma.customerLinkRequest.findUnique({
+        where: {
+          customerId_retailerId: {
+            customerId: consumerProfile.id,
+            retailerId: viewingRetailerId
+          }
+        }
+      });
+      isApprovedForThisRetailer = approvalStatus?.status === 'approved';
+      canBuy = isApprovedForThisRetailer;
+    }
+    // Case 2: No retailerId specified - show guidance
+    else {
+      // Not viewing a specific retailer - return empty with guidance
+      return res.json({
+        success: true,
+        products: [],
+        isLinked: false,
+        canBuy: false,
+        linkedRetailerId: null,
+        message: 'Please select a retailer to view their products, or link with a retailer to start shopping.'
+      });
+    }
+
     if (category) where.category = category as string;
     if (search) where.name = { contains: search as string };
 
-    const products = await prisma.product.findMany({ where });
-    res.json({ products });
+    const products = await prisma.product.findMany({
+      where,
+      include: {
+        retailerProfile: {
+          select: { shopName: true }
+        }
+      }
+    });
+
+    // Get retailer info
+    let retailerInfo = null;
+    if (viewingRetailerId) {
+      const retailer = await prisma.retailerProfile.findUnique({
+        where: { id: viewingRetailerId },
+        select: { id: true, shopName: true, address: true }
+      });
+      retailerInfo = retailer;
+    }
+
+    res.json({
+      success: true,
+      products,
+      isLinked: isApprovedForThisRetailer,
+      canBuy,
+      linkedRetailerId: viewingRetailerId, // For compatibility - shows retailer being viewed
+      viewingRetailerId,
+      retailerInfo
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -810,6 +1031,52 @@ export const getFoodCredit = async (req: AuthRequest, res: Response) => {
 
     res.json({ available_credit: wallet?.balance || 0 });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ==========================================
+// REWARD GAS BALANCE (For customer portal)
+// ==========================================
+
+export const getRewardGasBalance = async (req: AuthRequest, res: Response) => {
+  try {
+    const consumerProfile = await prisma.consumerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!consumerProfile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    // Get all gas rewards for this customer
+    const gasRewards = await prisma.gasReward.findMany({
+      where: { consumerId: consumerProfile.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Calculate total balance
+    const totalUnits = gasRewards.reduce((sum, r) => sum + r.units, 0);
+    const totalRwf = totalUnits * 300; // 300 RWF per M³
+
+    res.json({
+      success: true,
+      balance: {
+        units: totalUnits,
+        rwf: totalRwf,
+        currency: 'RWF'
+      },
+      recentTransactions: gasRewards.slice(0, 10).map(r => ({
+        id: r.id,
+        units: r.units,
+        rwf: r.units * 300,
+        source: r.source,
+        reference: r.reference,
+        createdAt: r.createdAt
+      }))
+    });
+  } catch (error: any) {
+    console.error('Get Reward Gas Balance Error:', error);
     res.status(500).json({ error: error.message });
   }
 };

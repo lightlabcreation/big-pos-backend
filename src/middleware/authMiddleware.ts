@@ -38,3 +38,28 @@ export const authorize = (...roles: string[]) => {
     next();
   };
 };
+
+// Optional authentication - populates req.user if valid token present, but doesn't block
+export const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      // No token - continue without user
+      return next();
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = verifyToken(token) as any;
+
+    req.user = {
+      id: Number(decoded.id),
+      role: decoded.role
+    };
+
+    next();
+  } catch (error) {
+    // Invalid token - continue without user (don't block)
+    next();
+  }
+};

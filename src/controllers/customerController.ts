@@ -18,13 +18,41 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                         name: true
                     }
                 },
-                wallets: true
+                wallets: true,
+                // Include sales to find linked retailer
+                sales: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    include: {
+                        retailerProfile: {
+                            include: {
+                                user: {
+                                    select: {
+                                        phone: true,
+                                        email: true,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         });
 
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
+
+        // Get the retailer from the most recent sale
+        const lastSale = consumerProfile.sales?.[0];
+        const linkedRetailer = lastSale?.retailerProfile ? {
+            id: lastSale.retailerProfile.id,
+            shopName: lastSale.retailerProfile.shopName,
+            phone: lastSale.retailerProfile.user?.phone,
+            email: lastSale.retailerProfile.user?.email,
+            address: lastSale.retailerProfile.address,
+            lastPurchaseDate: lastSale.createdAt,
+        } : null;
 
         res.json({
             success: true,
@@ -36,7 +64,9 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                 address: consumerProfile.address,
                 landmark: consumerProfile.landmark,
                 is_verified: consumerProfile.isVerified,
-                membership_type: consumerProfile.membershipType
+                membership_type: consumerProfile.membershipType,
+                // Linked Retailer (from last purchase)
+                linkedRetailer: linkedRetailer
             }
         });
     } catch (error: any) {
@@ -138,9 +168,33 @@ export const getWallets = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
 
-        const wallets = await prisma.wallet.findMany({
+        let wallets = await prisma.wallet.findMany({
             where: { consumerId: consumerProfile.id }
         });
+
+        // Lazy initialization: if no dashboard wallet exists, create it using legacy balance
+        let dashboardWallet = wallets.find(w => w.type === 'dashboard_wallet');
+        
+        if (!dashboardWallet) {
+            dashboardWallet = await prisma.wallet.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    type: 'dashboard_wallet',
+                    balance: consumerProfile.walletBalance || 0,
+                    currency: 'RWF'
+                }
+            });
+            wallets.push(dashboardWallet);
+        } else if (dashboardWallet.balance === 0 && (consumerProfile.walletBalance || 0) > 0) {
+            // One-time sync if wallet was created empty but legacy balance exists
+            dashboardWallet = await prisma.wallet.update({
+                where: { id: dashboardWallet.id },
+                data: { balance: consumerProfile.walletBalance || 0 }
+            });
+            // Update the wallet in the list
+            const idx = wallets.findIndex(w => w.id === dashboardWallet!.id);
+            if (idx !== -1) wallets[idx] = dashboardWallet;
+        }
 
         res.json({
             success: true,
@@ -689,6 +743,237 @@ export const redeemGasRewards = async (req: AuthRequest, res: Response) => {
         });
     } catch (error: any) {
         console.error('Redeem gas rewards error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// ==========================================
+// RETAILER LINKING FUNCTIONS (Customer-Retailer Flow)
+// ==========================================
+
+// Get available retailers for customer to link with
+export const getAvailableRetailers = async (req: AuthRequest, res: Response) => {
+    try {
+        const { search } = req.query;
+
+        const consumerProfile = await prisma.consumerProfile.findUnique({
+            where: { userId: req.user!.id }
+        });
+
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Consumer profile not found' });
+        }
+
+        // Get ALL retailers for discovery (customers can send link requests to any retailer)
+        const whereClause: any = {};
+
+        if (search) {
+            whereClause.OR = [
+                { shopName: { contains: search as string } },
+                { address: { contains: search as string } }
+            ];
+        }
+
+        const retailers = await prisma.retailerProfile.findMany({
+            where: whereClause,
+            include: {
+                user: {
+                    select: { phone: true, email: true }
+                },
+                inventory: {
+                    where: { status: 'active' }
+                },
+                linkedCustomers: true
+            }
+        });
+
+        // Get existing link requests from this customer
+        const existingRequests = await prisma.customerLinkRequest.findMany({
+            where: { customerId: consumerProfile.id }
+        });
+
+        const formattedRetailers = retailers.map(r => {
+            const existingRequest = existingRequests.find(req => req.retailerId === r.id);
+            return {
+                id: r.id,
+                shopName: r.shopName,
+                address: r.address,
+                phone: r.user?.phone,
+                email: r.user?.email,
+                isVerified: r.isVerified,
+                productCount: r.inventory.length,
+                customerCount: r.linkedCustomers.length,
+                isLinked: consumerProfile.linkedRetailerId === r.id,
+                requestStatus: existingRequest?.status || null
+            };
+        });
+
+        res.json({
+            success: true,
+            retailers: formattedRetailers,
+            currentLinkedRetailerId: consumerProfile.linkedRetailerId
+        });
+    } catch (error: any) {
+        console.error('Error fetching retailers:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Send link request to a retailer
+// NEW RULE: Customer can send requests to MULTIPLE retailers
+// Each retailer has independent approval status
+export const sendCustomerLinkRequest = async (req: AuthRequest, res: Response) => {
+    try {
+        const { retailerId, message } = req.body;
+
+        const consumerProfile = await prisma.consumerProfile.findUnique({
+            where: { userId: req.user!.id }
+        });
+
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Consumer profile not found' });
+        }
+
+        // Check if retailer exists
+        const retailer = await prisma.retailerProfile.findUnique({
+            where: { id: retailerId }
+        });
+
+        if (!retailer) {
+            return res.status(404).json({ success: false, error: 'Retailer not found' });
+        }
+
+        // Check for existing request to THIS specific retailer
+        const existingRequest = await prisma.customerLinkRequest.findUnique({
+            where: {
+                customerId_retailerId: {
+                    customerId: consumerProfile.id,
+                    retailerId: retailerId
+                }
+            }
+        });
+
+        if (existingRequest) {
+            if (existingRequest.status === 'pending') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'You already have a pending request to this retailer'
+                });
+            }
+            if (existingRequest.status === 'approved') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'You are already linked to this retailer'
+                });
+            }
+            // If rejected, allow resending by updating the existing request
+            if (existingRequest.status === 'rejected') {
+                const updatedRequest = await prisma.customerLinkRequest.update({
+                    where: { id: existingRequest.id },
+                    data: {
+                        status: 'pending',
+                        message: message || null,
+                        rejectionReason: null,
+                        respondedAt: null
+                    }
+                });
+                return res.json({ success: true, request: updatedRequest, message: 'Link request re-sent successfully' });
+            }
+        }
+
+        // Create new link request
+        const linkRequest = await prisma.customerLinkRequest.create({
+            data: {
+                customerId: consumerProfile.id,
+                retailerId: retailerId,
+                message: message || null
+            }
+        });
+
+        res.json({ success: true, request: linkRequest, message: 'Link request sent successfully' });
+    } catch (error: any) {
+        console.error('Error sending link request:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Get customer's own link requests
+export const getMyCustomerLinkRequests = async (req: AuthRequest, res: Response) => {
+    try {
+        const consumerProfile = await prisma.consumerProfile.findUnique({
+            where: { userId: req.user!.id }
+        });
+
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Consumer profile not found' });
+        }
+
+        const requests = await prisma.customerLinkRequest.findMany({
+            where: { customerId: consumerProfile.id },
+            include: {
+                retailer: {
+                    include: {
+                        user: {
+                            select: { phone: true, email: true }
+                        }
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        const formattedRequests = requests.map(r => ({
+            id: r.id,
+            retailerId: r.retailerId,
+            retailerName: r.retailer.shopName,
+            retailerPhone: r.retailer.user?.phone,
+            retailerAddress: r.retailer.address,
+            status: r.status,
+            message: r.message,
+            rejectionReason: r.rejectionReason,
+            createdAt: r.createdAt,
+            respondedAt: r.respondedAt
+        }));
+
+        res.json({ success: true, requests: formattedRequests });
+    } catch (error: any) {
+        console.error('Error fetching link requests:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Cancel a pending link request
+export const cancelCustomerLinkRequest = async (req: AuthRequest, res: Response) => {
+    try {
+        const { requestId } = req.params;
+
+        const consumerProfile = await prisma.consumerProfile.findUnique({
+            where: { userId: req.user!.id }
+        });
+
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Consumer profile not found' });
+        }
+
+        const request = await prisma.customerLinkRequest.findFirst({
+            where: {
+                id: parseInt(requestId),
+                customerId: consumerProfile.id,
+                status: 'pending'
+            }
+        });
+
+        if (!request) {
+            return res.status(404).json({ success: false, error: 'Pending request not found' });
+        }
+
+        await prisma.customerLinkRequest.delete({
+            where: { id: request.id }
+        });
+
+        res.json({ success: true, message: 'Request cancelled successfully' });
+    } catch (error: any) {
+        console.error('Error cancelling link request:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 };

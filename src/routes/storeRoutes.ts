@@ -16,7 +16,8 @@ import {
   confirmDelivery,
   createOrder,
   getActiveLoanLedger,
-  getCreditTransactions
+  getCreditTransactions,
+  getRewardGasBalance
 } from '../controllers/storeController';
 import {
   getCustomerProfile,
@@ -31,7 +32,12 @@ import {
   getNotificationPreferences,
   updateNotificationPreferences,
   getReferralCode,
-  redeemGasRewards
+  redeemGasRewards,
+  // Retailer Linking (Customer-Retailer Flow)
+  getAvailableRetailers,
+  sendCustomerLinkRequest,
+  getMyCustomerLinkRequests,
+  cancelCustomerLinkRequest
 } from '../controllers/customerController';
 import {
   getGasMeters,
@@ -43,16 +49,18 @@ import {
   getGasRewardsHistory,
   getGasRewardsLeaderboard,
   getCustomerOrders,
-  getOrderDetails
+  getOrderDetails,
+  recordGasUsage
 } from '../controllers/gasController';
-import { authenticate } from '../middleware/authMiddleware';
+import { authenticate, optionalAuthenticate } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Public routes
+// Public routes - Only retailers list is public (for discovery)
 router.get('/retailers', getRetailers);
-router.get('/categories', getCategories);
-router.get('/products', getProducts);
+router.get('/categories', authenticate, getCategories);
+// Products route - REQUIRES authentication and linking
+router.get('/products', authenticate, getProducts);
 
 // Protected routes - Auth
 router.post('/auth/logout', authenticate, logout);
@@ -76,6 +84,7 @@ router.get('/gas/meters', authenticate, getGasMeters);
 router.post('/gas/meters', authenticate, addGasMeter);
 router.delete('/gas/meters/:id', authenticate, removeGasMeter);
 router.post('/gas/topup', authenticate, topupGas);
+router.post('/gas/usage', authenticate, recordGasUsage);
 router.get('/gas/usage', authenticate, getGasUsage);
 
 // Protected routes - Gas Rewards
@@ -86,6 +95,12 @@ router.get('/gas/rewards/leaderboard', authenticate, getGasRewardsLeaderboard);
 // Rewards - Referral & Redemption
 router.get('/rewards/referral-code', authenticate, getReferralCode);
 router.post('/rewards/redeem', authenticate, redeemGasRewards);
+
+// Retailer Discovery & Link Request Routes (Customer-Retailer Linking)
+router.get('/retailers/available', authenticate, getAvailableRetailers);
+router.post('/retailers/link-request', authenticate, sendCustomerLinkRequest);
+router.get('/retailers/link-requests', authenticate, getMyCustomerLinkRequests);
+router.delete('/retailers/link-request/:requestId', authenticate, cancelCustomerLinkRequest);
 
 // Protected routes - Orders
 router.get('/customers/me/orders', authenticate, getMyOrders);
@@ -106,5 +121,8 @@ router.get('/loans/eligibility', authenticate, checkLoanEligibility);
 router.post('/loans/apply', authenticate, applyForLoan);
 router.post('/loans/:id/repay', authenticate, repayLoan);
 router.get('/loans/food-credit', authenticate, getFoodCredit);
+
+// Reward Gas
+router.get('/reward-gas/balance', authenticate, getRewardGasBalance);
 
 export default router;

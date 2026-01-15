@@ -12,7 +12,21 @@ import {
   getRetailerOrders,
   getOrder,
   updateOrderStatus,
-  getCreditRequests
+  getOrderStats,
+  confirmOrder,
+  rejectOrder,
+  shipOrder,
+  confirmDelivery,
+  getCreditRequests,
+  // Link Request Management
+  getLinkRequests,
+  approveLinkRequest,
+  rejectLinkRequest,
+  getLinkedRetailers,
+  unlinkRetailer,
+  // Settlement Invoices (Read-only)
+  getSettlementInvoices,
+  getSettlementInvoice
 } from '../controllers/wholesalerController';
 import {
   getRetailers,
@@ -65,9 +79,13 @@ router.delete('/inventory/:id', deleteProduct);
 
 // Orders
 router.get('/retailer-orders', getRetailerOrders);
-router.get('/retailer-orders/stats', getRetailerOrders);
+router.get('/retailer-orders/stats', getOrderStats);
 router.get('/retailer-orders/:id', getOrder);
 router.put('/retailer-orders/:id/status', updateOrderStatus);
+router.post('/retailer-orders/:id/confirm', confirmOrder);
+router.post('/retailer-orders/:id/reject', rejectOrder);
+router.post('/retailer-orders/:id/ship', shipOrder);
+router.post('/retailer-orders/:id/deliver', confirmDelivery);
 
 // Credit Management (Wholesaler specific)
 router.get('/credit-requests', getCreditRequests);
@@ -106,5 +124,16 @@ router.put('/settings', updateWholesalerSettings);
 router.get('/credit-requests', getCreditRequestsWithStats);
 router.post('/credit-requests/:id/approve', approveCreditRequest);
 router.post('/credit-requests/:id/reject', rejectCreditRequest);
+
+// Link Request Management (Retailer-Wholesaler Linking)
+router.get('/link-requests', getLinkRequests);
+router.post('/link-requests/:requestId/approve', approveLinkRequest);
+router.post('/link-requests/:requestId/reject', rejectLinkRequest);
+router.get('/linked-retailers', getLinkedRetailers);
+router.delete('/linked-retailers/:retailerId', unlinkRetailer);
+
+// Settlement Invoices (Read-only - Admin assigns these)
+router.get('/settlement-invoices', getSettlementInvoices);
+router.get('/settlement-invoices/:id', getSettlementInvoice);
 
 export default router;

@@ -29,4 +29,34 @@
     at done (C:\Users\asus\OneDrive\Documents\big_company\backend\node_modules\raw-body\index.js:227:7)
     at IncomingMessage.onEnd (C:\Users\asus\OneDrive\Documents\big_company\backend\node_modules\raw-body\index.js:287:7)
     at IncomingMessage.emit (node:events:518:28)
-    at IncomingMessage.emit (node:domain:489:12)\n
+    at IncomingMessage.emit (node:domain:489:12)\n[2026-01-14T12:42:36.816Z] TypeError: Cannot read properties of undefined (reading 'stack')
+    at C:\Users\asus\OneDrive\Documents\big_pos\backend\src\routes\debugRoutes.ts:35:37
+    at Layer.handleRequest (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:295:15
+    at processParams (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:582:12)
+    at next (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:291:5)
+    at Function.handle (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:186:3)\n[2026-01-14T12:43:15.226Z] TypeError: Cannot read properties of undefined (reading 'stack')
+    at C:\Users\asus\OneDrive\Documents\big_pos\backend\src\routes\debugRoutes.ts:35:37
+    at Layer.handleRequest (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:295:15
+    at processParams (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:582:12)
+    at next (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:291:5)
+    at Function.handle (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:186:3)\n[2026-01-14T12:45:13.704Z] TypeError: Cannot read properties of undefined (reading 'stack')
+    at C:\Users\asus\OneDrive\Documents\big_pos\backend\src\routes\debugRoutes.ts:35:37
+    at Layer.handleRequest (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\layer.js:152:17)
+    at next (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\route.js:117:3)
+    at handle (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\lib\layer.js:152:17)
+    at C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:295:15
+    at processParams (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:582:12)
+    at next (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:291:5)
+    at Function.handle (C:\Users\asus\OneDrive\Documents\big_pos\backend\node_modules\router\index.js:186:3)\n

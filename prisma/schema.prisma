@@ -351,9 +351,12 @@ model ConsumerProfile {
   isVerified       Boolean           @default(false)
   landmark         String?
   membershipType   String            @default("standard")
+  linkedRetailerId Int?              // Enforces ONE Customer -> ONE Retailer linking
   user             User              @relation(fields: [userId], references: [id], onDelete: NoAction, map: "ConsumerProfile_userId_fkey")
+  linkedRetailer   RetailerProfile?  @relation("RetailerCustomers", fields: [linkedRetailerId], references: [id], map: "ConsumerProfile_linkedRetailerId_fkey")
   settings         ConsumerSettings?
   customerOrders   CustomerOrder[]
+  customerLinkRequests CustomerLinkRequest[] @relation("CustomerLinkRequests")
   gasMeters        GasMeter[]
   gasRewards       GasReward[]
   gasTopups        GasTopup[]
@@ -362,6 +365,7 @@ model ConsumerProfile {
   sales            Sale[]
   wallets          Wallet[]
 
+  @@index([linkedRetailerId], map: "ConsumerProfile_linkedRetailerId_fkey")
   @@map("consumerprofile")
 }
 
@@ -460,6 +464,7 @@ model GasMeter {
   aliasName       String?
   ownerName       String?
   ownerPhone      String?
+  currentUnits    Float           @default(0)
   status          String          @default("active")
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @default(now()) @updatedAt
@@ -652,23 +657,73 @@ model RetailerCredit {
 }
 
 model RetailerProfile {
-  id             Int             @id @default(autoincrement())
-  userId         Int             @unique(map: "retailerProfile_userId_key")
-  shopName       String
-  address        String?
-  creditLimit    Float           @default(0)
-  walletBalance  Float           @default(0)
-  isVerified     Boolean         @default(false)
-  branches       Branch[]
-  creditRequests CreditRequest[]
-  nfcCards       NfcCard[]
-  orders         Order[]
-  inventory      Product[]
-  credit         RetailerCredit?
-  user           User            @relation(fields: [userId], references: [id], onDelete: NoAction, map: "retailerProfile_userId_fkey")
-  sales          Sale[]
+  id                  Int                  @id @default(autoincrement())
+  userId              Int                  @unique(map: "retailerProfile_userId_key")
+  shopName            String
+  address             String?
+  creditLimit         Float                @default(0)
+  walletBalance       Float                @default(0)
+  isVerified          Boolean              @default(false)
+  linkedWholesalerId  Int?                 // Enforces ONE Retailer -> ONE Wholesaler linking
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @default(now()) @updatedAt
+  branches            Branch[]
+  creditRequests      CreditRequest[]
+  nfcCards            NfcCard[]
+  orders              Order[]
+  inventory           Product[]
+  credit              RetailerCredit?
+  user                User                 @relation(fields: [userId], references: [id], onDelete: NoAction, map: "retailerProfile_userId_fkey")
+  linkedWholesaler    WholesalerProfile?   @relation("WholesalerRetailers", fields: [linkedWholesalerId], references: [id], map: "RetailerProfile_linkedWholesalerId_fkey")
+  sales               Sale[]
+  settlementInvoices  SettlementInvoice[]  @relation("RetailerInvoices")
 
+  @@index([linkedWholesalerId], map: "RetailerProfile_linkedWholesalerId_fkey")
   @@map("retailerprofile")
+
+  linkRequests              LinkRequest[]            @relation("RetailerLinkRequests")
+  linkedCustomers           ConsumerProfile[]        @relation("RetailerCustomers")
+  customerLinkRequests      CustomerLinkRequest[]    @relation("RetailerCustomerLinkRequests")
+}
+
+// Link Request - Retailer requests to be linked with a Wholesaler
+model LinkRequest {
+  id              Int               @id @default(autoincrement())
+  retailerId      Int
+  wholesalerId    Int
+  status          String            @default("pending") // pending, approved, rejected
+  message         String?           // Optional message from retailer
+  rejectionReason String?           // Reason if rejected
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  respondedAt     DateTime?         // When wholesaler responded
+
+  retailer        RetailerProfile   @relation("RetailerLinkRequests", fields: [retailerId], references: [id], onDelete: Cascade)
+  wholesaler      WholesalerProfile @relation("WholesalerLinkRequests", fields: [wholesalerId], references: [id], onDelete: Cascade)
+
+  @@unique([retailerId, wholesalerId]) // One request per retailer-wholesaler pair
+  @@index([wholesalerId])
+  @@map("linkrequest")
+}
+
+// Customer Link Request - Customer requests to be linked with a Retailer
+model CustomerLinkRequest {
+  id              Int               @id @default(autoincrement())
+  customerId      Int
+  retailerId      Int
+  status          String            @default("pending") // pending, approved, rejected
+  message         String?           // Optional message from customer
+  rejectionReason String?           // Reason if rejected
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  respondedAt     DateTime?         // When retailer responded
+
+  customer        ConsumerProfile   @relation("CustomerLinkRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  retailer        RetailerProfile   @relation("RetailerCustomerLinkRequests", fields: [retailerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, retailerId]) // One request per customer-retailer pair
+  @@index([retailerId])
+  @@map("customerlinkrequest")
 }
 
 model SaleItem {
@@ -739,19 +794,22 @@ model WalletTransaction {
 }
 
 model WholesalerProfile {
-  id                 Int                 @id @default(autoincrement())
-  userId             Int                 @unique(map: "wholesalerProfile_userId_key")
-  companyName        String
-  contactPerson      String?
-  tinNumber          String?
-  address            String?
-  isVerified         Boolean             @default(false)
-  receivedOrders     Order[]
-  inventory          Product[]
-  suppliers          Supplier[]
-  supplierPayments   SupplierPayment[]
-  user               User                @relation(fields: [userId], references: [id], onDelete: NoAction, map: "wholesalerProfile_userId_fkey")
-  wholesalerSettings WholesalerSettings?
+  id                  Int                  @id @default(autoincrement())
+  userId              Int                  @unique(map: "wholesalerProfile_userId_key")
+  companyName         String
+  contactPerson       String?
+  tinNumber           String?
+  address             String?
+  isVerified          Boolean              @default(false)
+  receivedOrders      Order[]
+  inventory           Product[]
+  suppliers           Supplier[]
+  supplierPayments    SupplierPayment[]
+  user                User                 @relation(fields: [userId], references: [id], onDelete: NoAction, map: "wholesalerProfile_userId_fkey")
+  wholesalerSettings  WholesalerSettings?
+  linkedRetailers     RetailerProfile[]    @relation("WholesalerRetailers")
+  settlementInvoices  SettlementInvoice[]  @relation("WholesalerInvoices")
+  linkRequests        LinkRequest[]        @relation("WholesalerLinkRequests")
 
   @@map("wholesalerprofile")
 }
@@ -777,6 +835,29 @@ model WholesalerSettings {
   wholesalerProfile  WholesalerProfile @relation(fields: [wholesalerId], references: [id], onDelete: NoAction, map: "wholesalerSettings_wholesalerId_fkey")
 
   @@map("wholesalersettings")
+}
+
+// Settlement Invoice model for Admin Invoice Management after Monthly Settlement
+model SettlementInvoice {
+  id                  Int                @id @default(autoincrement())
+  invoiceNumber       String             @unique(map: "SettlementInvoice_invoiceNumber_key")
+  partyType           String             // 'retailer' or 'wholesaler'
+  retailerId          Int?
+  wholesalerId        Int?
+  settlementMonth     String             // Format: YYYY-MM
+  totalAmount         Float
+  invoiceFileUrl      String?
+  uploadedBy          Int                // Admin user ID
+  notes               String?            @db.Text
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @default(now()) @updatedAt
+  retailerProfile     RetailerProfile?   @relation("RetailerInvoices", fields: [retailerId], references: [id], map: "SettlementInvoice_retailerId_fkey")
+  wholesalerProfile   WholesalerProfile? @relation("WholesalerInvoices", fields: [wholesalerId], references: [id], map: "SettlementInvoice_wholesalerId_fkey")
+
+  @@index([retailerId], map: "SettlementInvoice_retailerId_fkey")
+  @@index([wholesalerId], map: "SettlementInvoice_wholesalerId_fkey")
+  @@index([settlementMonth], map: "SettlementInvoice_settlementMonth_idx")
+  @@map("settlementinvoice")
 }
 
 enum course_level {

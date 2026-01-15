@@ -43,7 +43,22 @@ import {
   getSystemConfig,
   updateSystemConfig,
   getReports,
-  updateCustomerStatus
+  updateCustomerStatus,
+  // Real-time read-only account access
+  getCustomerAccountDetails,
+  getRetailerAccountDetails,
+  getWorkerAccountDetails,
+  getWholesalerAccountDetails,
+  // Wholesaler-Retailer linking
+  getRetailerWholesalerLinkage,
+  linkRetailerToWholesaler,
+  unlinkRetailerFromWholesaler,
+  // Settlement Invoice management
+  getSettlementInvoices,
+  createSettlementInvoice,
+  getSettlementInvoice,
+  updateSettlementInvoice,
+  deleteSettlementInvoice
 } from '../controllers/adminController';
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../controllers/supplierController';
 import { getJobs, createJob, updateJob, deleteJob, getApplications, createApplication, updateApplicationStatus } from '../controllers/recruitmentController';
@@ -137,5 +152,33 @@ router.get('/reports/revenue', getRevenueReport);
 // System Config Routes
 router.get('/system-config', getSystemConfig);
 router.put('/system-config', updateSystemConfig);
+
+// ==========================================
+// REAL-TIME READ-ONLY ACCOUNT ACCESS ROUTES
+// ==========================================
+// Customer account details (READ-ONLY for Admin)
+router.get('/customers/:id/account-details', getCustomerAccountDetails);
+// Retailer account details (READ-ONLY for Admin)
+router.get('/retailers/:id/account-details', getRetailerAccountDetails);
+// Worker/Employee account details (READ-ONLY for Admin)
+router.get('/employees/:id/account-details', getWorkerAccountDetails);
+// Wholesaler account details (READ-ONLY for Admin)
+router.get('/wholesalers/:id/account-details', getWholesalerAccountDetails);
+
+// ==========================================
+// WHOLESALER-RETAILER LINKAGE ROUTES
+// ==========================================
+router.get('/linkage', getRetailerWholesalerLinkage);
+router.post('/linkage/link', linkRetailerToWholesaler);
+router.post('/linkage/unlink', unlinkRetailerFromWholesaler);
+
+// ==========================================
+// SETTLEMENT INVOICE ROUTES
+// ==========================================
+router.get('/settlement-invoices', getSettlementInvoices);
+router.post('/settlement-invoices', createSettlementInvoice);
+router.get('/settlement-invoices/:id', getSettlementInvoice);
+router.put('/settlement-invoices/:id', updateSettlementInvoice);
+router.delete('/settlement-invoices/:id', deleteSettlementInvoice);
 
 export default router;

@@ -13,6 +13,8 @@ import {
   scanBarcode,
   createSale,
   updateSaleStatus,
+  cancelSale,
+  fulfillSale,
   getDailySales,
   getWholesalerProducts,
   createOrder,
@@ -25,7 +27,21 @@ import {
   getProfile,
   updateProfile,
   topUpWallet,
-  getAnalytics
+  getAnalytics,
+  // Wholesaler Discovery & Link Request APIs
+  getAvailableWholesalers,
+  sendLinkRequest,
+  getMyLinkRequests,
+  cancelLinkRequest,
+  // Customer Link Request Management APIs
+  getCustomerLinkRequests,
+  approveCustomerLinkRequest,
+  rejectCustomerLinkRequest,
+  getLinkedCustomers,
+  unlinkCustomer,
+  // Settlement Invoices (Read-only)
+  getSettlementInvoices,
+  getSettlementInvoice
 } from '../controllers/retailerController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -40,6 +56,8 @@ router.put('/inventory/:id', updateProduct);
 router.get('/orders', getOrders);
 router.get('/orders/:id', getOrder);
 router.put('/orders/:id/status', updateSaleStatus);
+router.post('/orders/:id/cancel', cancelSale);
+router.post('/orders/:id/fulfill', fulfillSale);
 router.post('/orders', createOrder);
 router.get('/branches', getBranches);
 router.post('/branches', createBranch);
@@ -69,5 +87,22 @@ router.get('/pos/daily-sales', getDailySales);
 
 // Wholesaler Products (for Add Stock)
 router.get('/wholesaler/products', getWholesalerProducts);
+
+// Wholesaler Discovery & Link Request Routes
+router.get('/wholesalers/available', getAvailableWholesalers);
+router.post('/wholesalers/link-request', sendLinkRequest);
+router.get('/wholesalers/link-requests', getMyLinkRequests);
+router.delete('/wholesalers/link-request/:requestId', cancelLinkRequest);
+
+// Customer Link Request Management Routes (Retailer manages customer requests)
+router.get('/customer-link-requests', getCustomerLinkRequests);
+router.post('/customer-link-requests/:requestId/approve', approveCustomerLinkRequest);
+router.post('/customer-link-requests/:requestId/reject', rejectCustomerLinkRequest);
+router.get('/linked-customers', getLinkedCustomers);
+router.delete('/linked-customers/:customerId', unlinkCustomer);
+
+// Settlement Invoices (Read-only - Admin assigns these)
+router.get('/settlement-invoices', getSettlementInvoices);
+router.get('/settlement-invoices/:id', getSettlementInvoice);
 
 export default router;

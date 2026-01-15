@@ -1,7 +1,48 @@
-import { Router } from 'express';
+import { Router, Express } from 'express';
 import prisma from '../utils/prisma';
 
 const router = Router();
+
+// Store app reference for route listing
+let appInstance: Express | null = null;
+export const setAppInstance = (app: Express) => { appInstance = app; };
+
+// List all registered routes
+router.get('/routes', (req, res) => {
+  if (!appInstance) {
+    return res.json({ error: 'App instance not set' });
+  }
+
+  const routes: any[] = [];
+
+  const extractRoutes = (stack: any[], basePath: string = '') => {
+    stack.forEach((layer: any) => {
+      if (layer.route) {
+        const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+        routes.push({ method: methods, path: basePath + layer.route.path });
+      } else if (layer.name === 'router' && layer.handle.stack) {
+        const routerPath = layer.regexp.source
+          .replace('\\/?', '')
+          .replace('(?=\\/|$)', '')
+          .replace(/\\\//g, '/')
+          .replace('^', '')
+          .replace(/\(\?:\(\[\^\\\/\]\+\?\)\)/g, ':param');
+        extractRoutes(layer.handle.stack, basePath + routerPath);
+      }
+    });
+  };
+
+  extractRoutes(appInstance._router.stack);
+
+  // Filter for admin routes
+  const adminRoutes = routes.filter(r => r.path.includes('/admin'));
+
+  res.json({
+    totalRoutes: routes.length,
+    adminRoutes: adminRoutes,
+    allRoutes: routes
+  });
+});
 
 router.get('/', async (req, res) => {
   try {

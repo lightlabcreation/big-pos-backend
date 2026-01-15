@@ -132,6 +132,28 @@ async function seed() {
     }
   });
   console.log('✅ Consumer 2 created');
+  
+  // Create NFC Cards for Consumers
+  await prisma.nfcCard.create({
+    data: {
+      uid: 'NFC123456',
+      pin: '1234',
+      status: 'active',
+      consumerId: consumer.id,
+      balance: 15000
+    }
+  });
+
+  await prisma.nfcCard.create({
+    data: {
+      uid: 'NFC789012',
+      pin: '1234',
+      status: 'active',
+      consumerId: consumer2.id,
+      balance: 10000
+    }
+  });
+  console.log('✅ NFC Cards created');
 
 
   // Get profiles

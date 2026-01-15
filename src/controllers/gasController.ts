@@ -20,20 +20,27 @@ export const getGasMeters = async (req: AuthRequest, res: Response) => {
                 consumerId: consumerProfile.id,
                 status: { not: 'removed' }
             },
+            include: {
+                gasTopups: true
+            },
             orderBy: { createdAt: 'desc' }
         });
 
         res.json({
             success: true,
-            data: meters.map(m => ({
-                id: m.id,
-                meter_number: m.meterNumber,
-                alias_name: m.aliasName,
-                owner_name: m.ownerName,
-                owner_phone: m.ownerPhone,
-                status: m.status,
-                created_at: m.createdAt
-            }))
+            data: meters.map(m => {
+                const totalUnits = m.gasTopups.reduce((sum, t) => sum + t.units, 0);
+                return {
+                    id: m.id,
+                    meter_number: m.meterNumber,
+                    alias_name: m.aliasName,
+                    owner_name: m.ownerName,
+                    owner_phone: m.ownerPhone,
+                    status: m.status,
+                    current_units: totalUnits, // Dynamic calculation
+                    created_at: m.createdAt
+                };
+            })
         });
     } catch (error: any) {
         console.error('Get gas meters error:', error);
@@ -165,75 +172,117 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ success: false, error: 'Gas meter not found' });
         }
 
-        // Get dashboard wallet
-        const wallet = await prisma.wallet.findFirst({
-            where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
-        });
+        // Calculate units based on realistic market rate (1,500 RWF = 1 kg)
+        // 1 RWF ≈ 0.00067 kg
+        const units = amount / 1500;
 
-        if (!wallet || wallet.balance < amount) {
-            return res.status(400).json({ success: false, error: 'Insufficient wallet balance' });
-        }
-
-        // Calculate units (assuming 1000 RWF = 1.1 m3)
-        const units = (amount / 1000) * 1.1;
-
-        // Create topup record
-        const topup = await prisma.gasTopup.create({
-            data: {
-                consumerId: consumerProfile.id,
-                meterId: meter.id,
-                amount,
-                units,
-                currency: 'RWF',
-                status: 'completed'
-            }
-        });
-
-        // Create customer order
-        const order = await prisma.customerOrder.create({
-            data: {
-                consumerId: consumerProfile.id,
-                orderType: 'gas',
-                status: 'completed',
-                amount,
-                currency: 'RWF',
-                items: JSON.stringify([{
-                    meterNumber: meter_number,
+        const result = await prisma.$transaction(async (tx) => {
+            // Create topup record
+            const topup = await tx.gasTopup.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    meterId: meter.id,
+                    amount,
                     units,
-                    amount
-                }]),
-                metadata: JSON.stringify({ paymentMethod: payment_method || 'wallet' })
+                    currency: 'RWF',
+                    status: 'completed'
+                }
+            });
+
+            // Create customer order
+            const order = await tx.customerOrder.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    orderType: 'gas',
+                    status: 'completed',
+                    amount,
+                    currency: 'RWF',
+                    items: JSON.stringify([{
+                        meterNumber: meter_number,
+                        units,
+                        amount
+                    }]),
+                    metadata: JSON.stringify({ paymentMethod: payment_method || 'wallet' })
+                }
+            });
+
+            // Check balance and deduct based on payment method
+            let newBalance = 0;
+
+            if (payment_method === 'wallet' || !payment_method) {
+                const wallet = await tx.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+                });
+
+                if (!wallet || wallet.balance < amount) {
+                    throw new Error('Insufficient wallet balance');
+                }
+
+                // Deduct from wallet
+                const updatedWallet = await tx.wallet.update({
+                    where: { id: wallet.id },
+                    data: { balance: { decrement: amount } }
+                });
+                newBalance = updatedWallet.balance;
+
+                // Create wallet transaction
+                await tx.walletTransaction.create({
+                    data: {
+                        walletId: wallet.id,
+                        type: 'gas_purchase',
+                        amount,
+                        description: `Gas topup for meter ${meter_number}`,
+                        reference: order.id.toString(),
+                        status: 'completed'
+                    }
+                });
+            } else if (payment_method === 'nfc_card') {
+                const { card_id } = req.body;
+                if (!card_id) throw new Error('Card ID is required for NFC payment');
+
+                const card = await tx.nfcCard.findFirst({
+                    where: { id: Number(card_id), consumerId: consumerProfile.id }
+                });
+
+                if (!card) throw new Error('NFC Card not found');
+                if (card.balance < amount) {
+                    throw new Error('Insufficient NFC card balance');
+                }
+
+                // Deduct from card
+                await tx.nfcCard.update({
+                    where: { id: card.id },
+                    data: { balance: { decrement: amount } }
+                });
+
+                // Get current wallet balance for response
+                const wallet = await tx.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+                });
+                newBalance = wallet?.balance || 0;
+            } else if (payment_method === 'mobile_money') {
+                // Simulated Success
+                const wallet = await tx.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+                });
+                newBalance = wallet?.balance || 0;
             }
+
+            // Award gas rewards (10% of units)
+            const rewardUnits = units * 0.1;
+            await tx.gasReward.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    units: rewardUnits,
+                    source: 'purchase',
+                    reference: order.id.toString()
+                }
+            });
+
+            return { topup, order, newBalance, rewardUnits };
         });
 
-        // Deduct from wallet
-        await prisma.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: { decrement: amount } }
-        });
-
-        // Create wallet transaction
-        await prisma.walletTransaction.create({
-            data: {
-                walletId: wallet.id,
-                type: 'debit',
-                amount,
-                description: `Gas topup for meter ${meter_number}`,
-                reference: order.id.toString(),
-                status: 'completed'
-            }
-        });
-
-        // Award gas rewards (10% of units)
-        const rewardUnits = units * 0.1;
-        await prisma.gasReward.create({
-            data: {
-                consumerId: consumerProfile.id,
-                units: rewardUnits,
-                source: 'purchase',
-                reference: order.id.toString()
-            }
-        });
+        const { topup, order, newBalance, rewardUnits } = result;
 
         // Generate gas meter token (16 digits formatted as XXXX-XXXX-XXXX-XXXX)
         const generateToken = () => {
@@ -252,7 +301,7 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 units,
                 token,
                 reward_units: rewardUnits,
-                new_wallet_balance: wallet.balance - amount
+                new_wallet_balance: newBalance
             },
             message: 'Gas topup successful'
         });
@@ -309,6 +358,65 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
         });
     } catch (error: any) {
         console.error('Get gas usage error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Record gas usage (Simulated)
+export const recordGasUsage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { meter_number, units_used, activity } = req.body;
+
+        if (!meter_number || !units_used || units_used <= 0) {
+            return res.status(400).json({ success: false, error: 'Invalid usage data' });
+        }
+
+        const consumerProfile = await prisma.consumerProfile.findUnique({
+            where: { userId }
+        });
+
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+
+        const meter = await prisma.gasMeter.findFirst({
+            where: {
+                meterNumber: meter_number,
+                consumerId: consumerProfile.id,
+                status: 'active'
+            }
+        });
+
+        if (!meter) {
+            return res.status(404).json({ success: false, error: 'Gas meter not found' });
+        }
+
+        // Create a negative topup record to represent consumption
+        // This avoids schema changes while maintaining accurate dynamic balance
+        const usage = await prisma.gasTopup.create({
+            data: {
+                consumerId: consumerProfile.id,
+                meterId: meter.id,
+                amount: 0,
+                units: -units_used, // Negative units subtract from total
+                currency: 'RWF',
+                status: 'consumed',
+                orderId: activity || 'Cooking Session'
+            }
+        });
+
+        res.json({
+            success: true,
+            data: {
+                usage_id: usage.id,
+                units_used,
+                meter_number
+            },
+            message: 'Gas usage recorded successfully'
+        });
+    } catch (error: any) {
+        console.error('Record gas usage error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 };
