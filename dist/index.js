@@ -1,9 +1,42 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
+const express_1 = __importDefault(require("express")); // Restart trigger
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
@@ -14,22 +47,49 @@ const employeeRoutes_1 = __importDefault(require("./routes/employeeRoutes"));
 const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const nfcRoutes_1 = __importDefault(require("./routes/nfcRoutes"));
 const walletRoutes_1 = __importDefault(require("./routes/walletRoutes"));
-const debugRoutes_1 = __importDefault(require("./routes/debugRoutes"));
+const debugRoutes_1 = __importStar(require("./routes/debugRoutes"));
 const trainingRoutes_1 = __importDefault(require("./routes/trainingRoutes"));
+console.log('--- Server Starting ---');
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 9000;
+const PORT = process.env.PORT || 9001;
 // CORS Configuration
+const allowedOrigins = [
+    "http://localhost:3000",
+    "http://localhost:3062",
+    "http://localhost:5173",
+    "http://localhost:9001",
+    "http://localhost:9000",
+    "http://127.0.0.1:9001",
+    "https://big-company-frontend.vercel.app",
+    "https://big-pos-backend-production.up.railway.app",
+    "https://big-pos.netlify.app"
+];
 app.use((0, cors_1.default)({
-    origin: ["https://big-company-frontend.vercel.app", "http://localhost:3000", "https://big-pos.netlify.app", "http://localhost:5173", "http://localhost:3062", "http://localhost:9000"],
-    credentials: true
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin)
+            return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
+app.use(express_1.default.json());
 // Request Logger
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.url}`);
+    if (req.body && Object.keys(req.body).length > 0) {
+        console.log(`  Body: ${JSON.stringify(req.body)}`);
+    }
     next();
 });
-app.use(express_1.default.json());
 // Routes
 app.use('/store/auth', authRoutes_1.default); // Consumer uses /store/auth
 app.use('/retailer/auth', authRoutes_1.default);
@@ -45,8 +105,17 @@ app.use('/admin', adminRoutes_1.default);
 app.use('/nfc', nfcRoutes_1.default);
 app.use('/wallet', walletRoutes_1.default);
 app.use('/debug', debugRoutes_1.default); // Public debug endpoint
+(0, debugRoutes_1.setAppInstance)(app); // Enable route listing in debug
 app.get('/', (req, res) => {
     res.send('Big Company API is running');
+});
+// Handle 404 cases
+app.use((req, res, next) => {
+    res.status(404).json({
+        success: false,
+        message: 'Route not found',
+        path: req.path
+    });
 });
 // Global error handler
 app.use((err, req, res, next) => {

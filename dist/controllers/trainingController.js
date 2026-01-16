@@ -38,7 +38,7 @@ const getCourses = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         // Format courses with enrollment info
         const courses = allCourses.map(course => {
             const enrollment = course.enrollments[0]; // Employee can only have one enrollment per course
-            const completedLessons = enrollment ? enrollment.lessonProgress.filter(lp => lp.completed).length : 0;
+            const completedLessons = enrollment ? enrollment.lessonProgress.filter((lp) => lp.completed).length : 0;
             return {
                 id: course.id,
                 title: course.title,
@@ -75,7 +75,7 @@ const getCourseById = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             return res.status(404).json({ error: 'Employee profile not found' });
         }
         const course = yield prisma_1.default.course.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: {
                 lessons: {
                     orderBy: { order: 'asc' }
@@ -92,7 +92,7 @@ const getCourseById = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             return res.status(404).json({ error: 'Course not found' });
         }
         const enrollment = course.enrollments[0];
-        const completedLessons = enrollment ? enrollment.lessonProgress.filter(lp => lp.completed).length : 0;
+        const completedLessons = enrollment ? enrollment.lessonProgress.filter((lp) => lp.completed).length : 0;
         const formattedCourse = {
             id: course.id,
             title: course.title,
@@ -140,7 +140,7 @@ const enrollCourse = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         }
         // Check if course exists
         const course = yield prisma_1.default.course.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { lessons: true }
         });
         if (!course) {
@@ -150,7 +150,7 @@ const enrollCourse = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const existingEnrollment = yield prisma_1.default.courseEnrollment.findUnique({
             where: {
                 courseId_employeeId: {
-                    courseId: id,
+                    courseId: Number(id),
                     employeeId: employeeProfile.id
                 }
             }
@@ -161,7 +161,7 @@ const enrollCourse = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Create enrollment
         const enrollment = yield prisma_1.default.courseEnrollment.create({
             data: {
-                courseId: id,
+                courseId: Number(id),
                 employeeId: employeeProfile.id,
                 status: 'NOT_STARTED'
             }
@@ -196,7 +196,7 @@ const updateLessonProgress = (req, res) => __awaiter(void 0, void 0, void 0, fun
         }
         // Find the lesson
         const lesson = yield prisma_1.default.lesson.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { course: true }
         });
         if (!lesson) {
@@ -223,7 +223,7 @@ const updateLessonProgress = (req, res) => __awaiter(void 0, void 0, void 0, fun
             where: {
                 enrollmentId_lessonId: {
                     enrollmentId: enrollment.id,
-                    lessonId: id
+                    lessonId: Number(id)
                 }
             }
         });
@@ -231,7 +231,7 @@ const updateLessonProgress = (req, res) => __awaiter(void 0, void 0, void 0, fun
             lessonProgress = yield prisma_1.default.lessonProgress.create({
                 data: {
                     enrollmentId: enrollment.id,
-                    lessonId: id,
+                    lessonId: Number(id),
                     completed: true,
                     completedAt: new Date()
                 }

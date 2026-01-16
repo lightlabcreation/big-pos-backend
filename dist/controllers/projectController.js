@@ -108,7 +108,7 @@ const getProjectById = (req, res) => __awaiter(void 0, void 0, void 0, function*
             return res.status(404).json({ error: 'Employee profile not found' });
         }
         const project = yield prisma_1.default.project.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: {
                 manager: { include: { user: true } },
                 tasks: {
@@ -127,17 +127,17 @@ const getProjectById = (req, res) => __awaiter(void 0, void 0, void 0, function*
             return res.status(404).json({ error: 'Project not found' });
         }
         // Check if employee has access to this project
-        const isMember = project.projectMembers.some(pm => pm.employeeId === employeeProfile.id);
+        const isMember = project.projectMembers.some((pm) => pm.employeeId === employeeProfile.id);
         const isManager = project.managerId === employeeProfile.id;
         if (!isMember && !isManager) {
             return res.status(403).json({ error: 'You do not have access to this project' });
         }
         // Get employee's role
-        const memberRecord = project.projectMembers.find(pm => pm.employeeId === employeeProfile.id);
+        const memberRecord = project.projectMembers.find((pm) => pm.employeeId === employeeProfile.id);
         const myRole = isManager ? 'Project Manager' : ((memberRecord === null || memberRecord === void 0 ? void 0 : memberRecord.role) || 'Team Member');
         // Format response
         const totalTasks = project.tasks.length;
-        const completedTasks = project.tasks.filter(t => t.status === 'COMPLETED').length;
+        const completedTasks = project.tasks.filter((t) => t.status === 'COMPLETED').length;
         const totalHours = project.tasks.reduce((sum, t) => sum + (t.actualHours || 0), 0);
         const estimatedHours = project.tasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0);
         const formattedProject = {
@@ -162,7 +162,7 @@ const getProjectById = (req, res) => __awaiter(void 0, void 0, void 0, function*
             totalTasks: totalTasks,
             hoursSpent: totalHours,
             estimatedHours: estimatedHours,
-            tasks: project.tasks.map(task => ({
+            tasks: project.tasks.map((task) => ({
                 id: task.id,
                 title: task.title,
                 description: task.description,
@@ -175,7 +175,7 @@ const getProjectById = (req, res) => __awaiter(void 0, void 0, void 0, function*
                 estimatedHours: task.estimatedHours,
                 actualHours: task.actualHours
             })),
-            team: project.projectMembers.map(pm => ({
+            team: project.projectMembers.map((pm) => ({
                 id: pm.employeeProfile.id,
                 name: pm.employeeProfile.user.name,
                 email: pm.employeeProfile.user.email,
@@ -242,7 +242,7 @@ const updateTaskStatus = (req, res) => __awaiter(void 0, void 0, void 0, functio
             return res.status(404).json({ error: 'Employee profile not found' });
         }
         const task = yield prisma_1.default.task.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
         if (!task) {
             return res.status(404).json({ error: 'Task not found' });
@@ -252,7 +252,7 @@ const updateTaskStatus = (req, res) => __awaiter(void 0, void 0, void 0, functio
             return res.status(403).json({ error: 'You are not assigned to this task' });
         }
         const updatedTask = yield prisma_1.default.task.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 status: status ? status.toUpperCase() : undefined,
                 actualHours: actualHours !== undefined ? actualHours : undefined

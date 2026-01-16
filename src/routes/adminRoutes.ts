@@ -64,10 +64,12 @@ import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '..
 import { getJobs, createJob, updateJob, deleteJob, getApplications, createApplication, updateApplicationStatus } from '../controllers/recruitmentController';
 import { getDeals, createDeal, updateDeal, deleteDeal } from '../controllers/dealsController';
 import { authenticate } from '../middleware/authMiddleware';
+import { enforceReadOnly } from '../middleware/readOnlyMiddleware';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(enforceReadOnly);
 
 router.get('/dashboard', getDashboard);
 

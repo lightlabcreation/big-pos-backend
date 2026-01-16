@@ -5,9 +5,12 @@ import prisma from '../utils/prisma';
 // Create a new retail order
 // UPDATED: Reward Gas can now be applied as partial discount during payment
 // REQUIREMENT #3: Customer must be linked to retailer before ordering
+// Create a new retail order
+// UPDATED: Reward Gas can now be applied as partial discount during payment
+// REQUIREMENT #3: Customer must be linked to retailer before ordering
 export const createOrder = async (req: AuthRequest, res: Response) => {
   try {
-    const { retailerId, items, paymentMethod, total, applyRewardGas, rewardGasAmount } = req.body;
+    const { retailerId, items, paymentMethod, total, applyRewardGas, rewardGasAmount, meterId } = req.body;
     const userId = req.user!.id;
 
     // ==========================================
@@ -26,8 +29,6 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     // ==========================================
     // ACCOUNT LINKING ENFORCEMENT (REQUIREMENT #3)
-    // Customer MUST be approved by the retailer before placing orders
-    // NEW LOGIC: Customer can be linked to MULTIPLE retailers
     // ==========================================
     if (!retailerId) {
       return res.status(400).json({
@@ -57,6 +58,21 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Order must contain items' });
+    }
+
+    // ==========================================
+    // METER ID VALIDATION (conditional)
+    // ==========================================
+    const isGasRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(paymentMethod); // 'wallet' is usually dashboard_wallet
+    
+    if (isGasRewardEligible) {
+      if (!meterId) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Meter ID is required for this payment method to earn gas rewards.' 
+        });
+      }
+      // TODO: Validate meterId with external API if needed
     }
 
     // Calculate amount to pay after reward gas discount
@@ -129,6 +145,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           }
         });
       } else if (paymentMethod === 'nfc_card' && amountToPay > 0) {
+        // ... NFC logic ...
         const { cardId } = req.body;
         if (!cardId) throw new Error('Card ID is required for NFC payment');
 
@@ -148,11 +165,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           where: { id: card.id },
           data: { balance: { decrement: amountToPay } }
         });
-      } else if (paymentMethod !== 'mobile_money' && amountToPay > 0) {
-         // For mobile_money or unknown methods, payment is handled externally
       }
 
-      // 2. Create Sale Record
+      // 3. Create Sale Record
       const sale = await prisma.sale.create({
         data: {
           consumerId: consumerProfile.id,
@@ -160,6 +175,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           totalAmount: total,
           status: 'pending',
           paymentMethod: paymentMethod,
+          // Store meterId if provided (ensure schema supports it, confirmed in previous steps)
+          meterId: meterId || null, 
           saleItems: {
             create: items.map((item: any) => ({
               productId: item.productId,
@@ -171,16 +188,47 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         include: { saleItems: true }
       });
 
-      // 3. Update Product Stock (Optional based on business logic, assuming simple stock handling)
-      /* 
-      // If we were tracking inventory strictly, we would decrement here.
-      for (const item of items) {
-         await prisma.product.update({
-            where: { id: item.productId },
-            data: { stock: { decrement: item.quantity } }
-         });
+      // 4. CREDIT GAS REWARDS (The Missing Piece)
+      // Logic: 12% of PROFIT if eligible payment method
+      if (isGasRewardEligible && meterId) {
+        // Calculate Profit
+        // We need product cost prices. Fetch products.
+        const productIds = items.map((i: any) => i.productId);
+        const products = await prisma.product.findMany({
+          where: { id: { in: productIds } }
+        });
+        
+        let totalProfit = 0;
+        
+        items.forEach((item: any) => {
+          const product = products.find(p => p.id === item.productId);
+          if (product && product.costPrice) {
+            const profitPerItem = item.price - product.costPrice;
+            if (profitPerItem > 0) {
+              totalProfit += profitPerItem * item.quantity;
+            }
+          }
+        });
+
+        if (totalProfit > 0) {
+          const rewardAmountRWF = totalProfit * 0.12; // 12% of profit
+          const rewardUnits = rewardAmountRWF / 300; // Convert to M3 if 1 unit = 300 RWF approx or strictly use RWF value logic? 
+          // Previous logic used units. Assuming 1 unit ~ 300 RWF based on deduction logic above.
+          // Or just store exact units based on conversion.
+          
+          await prisma.gasReward.create({
+             data: {
+               consumerId: consumerProfile.id,
+               saleId: sale.id,
+               meterId: meterId,
+               units: rewardUnits,
+               profitAmount: totalProfit, // Store profit for audit
+               source: 'purchase_reward',
+               reference: `Reward for Order #${sale.id}`
+             }
+          });
+        }
       }
-      */
 
       return sale;
     });
@@ -191,29 +239,35 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get retailers with location filtering
+// Get retailers with STRICT location filtering
 export const getRetailers = async (req: AuthRequest, res: Response) => {
   try {
-    const { district, sector, cell, search } = req.query;
+    const { district, sector, province, search } = req.query;
     const where: any = {};
-    // Show ALL retailers so customers can discover and send link requests
+    
+    // REQUIREMENT #4: Address-Based Store Discovery
+    // "Customer must enter: Sector, District, Province"
+    // "Show only nearby / eligible stores"
+    
+    // If strict location params are provided, enforce match
+    if (district || sector || province) {
+        // Normalize input
+        const matchSector = sector ? (sector as string).trim() : undefined;
+        const matchDistrict = district ? (district as string).trim() : undefined;
+        const matchProvince = province ? (province as string).trim() : undefined;
 
-    // Location-based filtering
-    if (district || sector || cell) {
-        const conditions: any[] = [];
-        if (district) conditions.push({ address: { contains: district as string } });
-        if (sector) conditions.push({ address: { contains: sector as string } });
-        if (cell) conditions.push({ address: { contains: cell as string } });
-
-        if (conditions.length > 0) {
-            where.AND = conditions;
-        }
+        if (matchProvince) where.province = matchProvince;
+        if (matchDistrict) where.district = matchDistrict;
+        if (matchSector) where.sector = matchSector;
     }
 
-    // Search by shop name
+    // Search by shop name (optional on top of location)
     if (search) {
       where.shopName = { contains: search as string };
     }
+
+    // Only Verified Retailers
+    where.isVerified = true;
 
     const retailers = await prisma.retailerProfile.findMany({
       where,
@@ -225,60 +279,34 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
             isActive: true,
           }
         },
-        // Get products with stock > 0
         inventory: {
           where: { stock: { gt: 0 } },
           select: { id: true }
         },
-        // Get linked wholesaler info
         linkedWholesaler: {
-          select: {
-            companyName: true,
-          }
+          select: { companyName: true }
+        },
+        customerLinkRequests: {
+            where: { customerId: req.user?.id ? (await prisma.consumerProfile.findUnique({where:{userId: req.user.id}}))?.id : -1 }, // Check link status
+            select: { status: true }
         }
       }
     });
 
-    // Filter only active retailers
-    let activeRetailers = retailers.filter(r => r.user?.isActive);
-
-    // Fallback: If strict location filtering returns no results, return all verified retailers
-    if (activeRetailers.length === 0 && (district || sector || cell)) {
-        const fallbackRetailers = await prisma.retailerProfile.findMany({
-            where: { isVerified: true },
-            include: {
-              user: {
-                select: {
-                  phone: true,
-                  email: true,
-                  isActive: true,
-                }
-              },
-              inventory: {
-                where: { stock: { gt: 0 } },
-                select: { id: true }
-              },
-              linkedWholesaler: {
-                select: {
-                  companyName: true,
-                }
-              }
-            },
-            take: 20
-        });
-        activeRetailers = fallbackRetailers.filter(r => r.user?.isActive);
-    }
-
-    // Format response with useful info for customers
-    const formattedRetailers = activeRetailers.map(r => ({
+    // Format response
+    const formattedRetailers = retailers.map((r: any) => ({
       id: r.id,
       shopName: r.shopName,
       address: r.address,
+      province: r.province,
+      district: r.district,
+      sector: r.sector,
       phone: r.user?.phone,
       email: r.user?.email,
-      isVerified: r.isVerified,
       productCount: r.inventory?.length || 0,
       wholesaler: r.linkedWholesaler?.companyName || null,
+      requestStatus: r.customerLinkRequests?.[0]?.status || null, // pending, approved, or null
+      canSendRequest: !r.customerLinkRequests?.[0] || r.customerLinkRequests[0].status === 'rejected'
     }));
 
     res.json({

@@ -47,8 +47,8 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 attendance: presentDays,
                 late: lateDays,
                 absent: absentDays,
-                tasksCompleted: 42, // Placeholder
-                pendingTasks: 5 // Placeholder
+                tasksCompleted: yield prisma_1.default.task.count({ where: { assignedToId: employeeProfile.id, status: 'COMPLETED' } }),
+                pendingTasks: yield prisma_1.default.task.count({ where: { assignedToId: employeeProfile.id, status: { not: 'COMPLETED' } } })
             }
         });
     }
@@ -102,7 +102,7 @@ const getAttendanceById = (req, res) => __awaiter(void 0, void 0, void 0, functi
         if (!employeeProfile)
             return res.status(404).json({ error: 'Employee not found' });
         const attendance = yield prisma_1.default.attendance.findUnique({
-            where: { id }
+            where: { id: Number(id) },
         });
         if (!attendance)
             return res.status(404).json({ error: 'Attendance record not found' });
@@ -295,10 +295,20 @@ const getPayslips = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     }
 });
 exports.getPayslips = getPayslips;
-// Get tasks (placeholder)
+// Get tasks 
 const getTasks = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        res.json({ tasks: [] });
+        const employeeProfile = yield prisma_1.default.employeeProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!employeeProfile)
+            return res.status(404).json({ error: 'Employee not found' });
+        const tasks = yield prisma_1.default.task.findMany({
+            where: { assignedToId: employeeProfile.id },
+            include: { project: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json({ tasks });
     }
     catch (error) {
         res.status(500).json({ error: error.message });
@@ -367,14 +377,14 @@ const updateBillPayment = (req, res) => __awaiter(void 0, void 0, void 0, functi
         if (!employeeProfile)
             return res.status(404).json({ error: 'Employee not found' });
         const bill = yield prisma_1.default.billPayment.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
         if (!bill)
             return res.status(404).json({ error: 'Bill payment not found' });
         if (bill.employeeId !== employeeProfile.id)
             return res.status(403).json({ error: 'Unauthorized' });
         const updated = yield prisma_1.default.billPayment.update({
-            where: { id },
+            where: { id: Number(id) },
             data: Object.assign(Object.assign({}, req.body), { startDate: req.body.startDate ? new Date(req.body.startDate) : undefined, endDate: req.body.endDate ? new Date(req.body.endDate) : undefined })
         });
         res.json(updated);
@@ -394,14 +404,14 @@ const deleteBillPayment = (req, res) => __awaiter(void 0, void 0, void 0, functi
         if (!employeeProfile)
             return res.status(404).json({ error: 'Employee not found' });
         const bill = yield prisma_1.default.billPayment.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
         if (!bill)
             return res.status(404).json({ error: 'Bill payment not found' });
         if (bill.employeeId !== employeeProfile.id)
             return res.status(403).json({ error: 'Unauthorized' });
         yield prisma_1.default.billPayment.delete({
-            where: { id }
+            where: { id: Number(id) }
         });
         res.json({ message: 'Bill payment deleted successfully' });
     }

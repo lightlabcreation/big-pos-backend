@@ -19,7 +19,23 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                     }
                 },
                 wallets: true,
-                // Include sales to find linked retailer
+                // NEW: Include all approved link requests to retailers
+                customerLinkRequests: {
+                    where: { status: 'approved' },
+                    include: {
+                        retailer: {
+                            include: {
+                                user: {
+                                    select: {
+                                        phone: true,
+                                        email: true,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                // Include sales to find last linked retailer (for backward compatibility / sorting)
                 sales: {
                     orderBy: { createdAt: 'desc' },
                     take: 1,
@@ -43,9 +59,19 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
 
-        // Get the retailer from the most recent sale
+        // 1. Get ALL linked retailers from approved requests
+        const linkedRetailers = (consumerProfile.customerLinkRequests || []).map(req => ({
+            id: req.retailer.id,
+            shopName: req.retailer.shopName,
+            phone: req.retailer.user?.phone,
+            email: req.retailer.user?.email,
+            address: req.retailer.address,
+            linkedAt: req.respondedAt || req.createdAt
+        }));
+
+        // 2. Identify the "main" linked retailer (from last purchase)
         const lastSale = consumerProfile.sales?.[0];
-        const linkedRetailer = lastSale?.retailerProfile ? {
+        const lastRetailer = lastSale?.retailerProfile ? {
             id: lastSale.retailerProfile.id,
             shopName: lastSale.retailerProfile.shopName,
             phone: lastSale.retailerProfile.user?.phone,
@@ -53,6 +79,9 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
             address: lastSale.retailerProfile.address,
             lastPurchaseDate: lastSale.createdAt,
         } : null;
+
+        // If no purchase yet, but has approved links, use the first approved one as linkedRetailer
+        const primaryRetailer = lastRetailer || (linkedRetailers.length > 0 ? linkedRetailers[0] : null);
 
         res.json({
             success: true,
@@ -65,8 +94,10 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                 landmark: consumerProfile.landmark,
                 is_verified: consumerProfile.isVerified,
                 membership_type: consumerProfile.membershipType,
-                // Linked Retailer (from last purchase)
-                linkedRetailer: linkedRetailer
+                // Backward compatibility: the "primary" retailer
+                linkedRetailer: primaryRetailer,
+                // NEW: All approved retailers
+                linkedRetailers: linkedRetailers
             }
         });
     } catch (error: any) {
@@ -752,9 +783,11 @@ export const redeemGasRewards = async (req: AuthRequest, res: Response) => {
 // ==========================================
 
 // Get available retailers for customer to link with
+// Get available retailers for customer to link with
+// UPDATED: Enforce strict address-based matching (Province/District/Sector)
 export const getAvailableRetailers = async (req: AuthRequest, res: Response) => {
     try {
-        const { search } = req.query;
+        const { search, province, district, sector } = req.query;
 
         const consumerProfile = await prisma.consumerProfile.findUnique({
             where: { userId: req.user!.id }
@@ -767,12 +800,23 @@ export const getAvailableRetailers = async (req: AuthRequest, res: Response) => 
         // Get ALL retailers for discovery (customers can send link requests to any retailer)
         const whereClause: any = {};
 
+        // REQUIREMENT #4: Address-Based Store Discovery
+        // Location fields are optional; if provided, they filter the results.
+        if (province || district || sector) {
+             if (province) whereClause.province = (province as string).trim();
+             if (district) whereClause.district = (district as string).trim();
+             if (sector) whereClause.sector = (sector as string).trim();
+        }
+
         if (search) {
             whereClause.OR = [
                 { shopName: { contains: search as string } },
                 { address: { contains: search as string } }
             ];
         }
+
+        // Only verified retailers
+        whereClause.isVerified = true;
 
         const retailers = await prisma.retailerProfile.findMany({
             where: whereClause,
@@ -781,9 +825,11 @@ export const getAvailableRetailers = async (req: AuthRequest, res: Response) => 
                     select: { phone: true, email: true }
                 },
                 inventory: {
-                    where: { status: 'active' }
+                    where: { stock: { gt: 0 } }
                 },
-                linkedCustomers: true
+                customerLinkRequests: {
+                    where: { customerId: consumerProfile.id }
+                }
             }
         });
 
@@ -792,26 +838,26 @@ export const getAvailableRetailers = async (req: AuthRequest, res: Response) => 
             where: { customerId: consumerProfile.id }
         });
 
-        const formattedRetailers = retailers.map(r => {
+        const formattedRetailers = retailers.map((r: any) => {
             const existingRequest = existingRequests.find(req => req.retailerId === r.id);
             return {
                 id: r.id,
                 shopName: r.shopName,
                 address: r.address,
-                phone: r.user?.phone,
-                email: r.user?.email,
-                isVerified: r.isVerified,
+                province: r.province,
+                district: r.district,
+                sector: r.sector,
                 productCount: r.inventory.length,
-                customerCount: r.linkedCustomers.length,
-                isLinked: consumerProfile.linkedRetailerId === r.id,
-                requestStatus: existingRequest?.status || null
+                isLinked: r.customerLinkRequests?.length > 0, // Simplified check if link exists via relation
+                requestStatus: existingRequest?.status || null,
+                canSendRequest: !existingRequest || existingRequest.status === 'rejected'
             };
         });
 
         res.json({
             success: true,
             retailers: formattedRetailers,
-            currentLinkedRetailerId: consumerProfile.linkedRetailerId
+            total: formattedRetailers.length
         });
     } catch (error: any) {
         console.error('Error fetching retailers:', error);

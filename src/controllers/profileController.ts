@@ -18,25 +18,26 @@ export const getWholesalerProfile = async (req: AuthRequest, res: Response) => {
                         role: true
                     }
                 },
-                settings: true
-            } as any
+                wholesalerSettings: true
+            }
         });
 
-        if (!profile) {
-            return res.status(404).json({ error: 'Wholesaler profile not found' });
-        }
-
-        // If settings don't exist yet, create them with defaults
-        if (!(profile as any).settings) {
-            const defaultSettings = await (prisma as any).wholesalerSettings.create({
+        if (!profile.wholesalerSettings) {
+            const defaultSettings = await prisma.wholesalerSettings.create({
                 data: {
                     wholesalerId: profile.id
                 }
             });
-            (profile as any).settings = defaultSettings;
+            (profile as any).wholesalerSettings = defaultSettings;
         }
 
-        res.json({ success: true, profile });
+        // Map wholesalerSettings to settings for frontend compatibility
+        const profileResponse = {
+            ...profile,
+            settings: profile.wholesalerSettings
+        };
+
+        res.json({ success: true, profile: profileResponse });
     } catch (error: any) {
         console.error('❌ Error fetching profile:', error);
         res.status(500).json({ error: error.message });
@@ -83,11 +84,17 @@ export const updateWholesalerProfile = async (req: AuthRequest, res: Response) =
                         role: true
                     }
                 },
-                settings: true
-            } as any
+                wholesalerSettings: true
+            }
         });
 
-        res.json({ success: true, profile: updatedProfile });
+        // Map wholesalerSettings to settings for frontend compatibility
+        const profileResponse = {
+            ...updatedProfile,
+            settings: updatedProfile.wholesalerSettings
+        };
+
+        res.json({ success: true, profile: profileResponse });
     } catch (error: any) {
         console.error('❌ Error updating profile:', error);
         res.status(500).json({ error: error.message });
@@ -101,17 +108,17 @@ export const updateWholesalerSettings = async (req: AuthRequest, res: Response) 
 
         const profile = await prisma.wholesalerProfile.findUnique({
             where: { userId: req.user!.id },
-            include: { settings: true }
-        } as any);
+            include: { wholesalerSettings: true }
+        });
 
         if (!profile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
 
         let updatedSettings;
-        if (!(profile as any).settings) {
+        if (!profile.wholesalerSettings) {
             // Create new settings
-            updatedSettings = await (prisma as any).wholesalerSettings.create({
+            updatedSettings = await prisma.wholesalerSettings.create({
                 data: {
                     wholesalerId: profile.id,
                     ...settingsData
@@ -119,8 +126,8 @@ export const updateWholesalerSettings = async (req: AuthRequest, res: Response) 
             });
         } else {
             // Update existing settings
-            updatedSettings = await (prisma as any).wholesalerSettings.update({
-                where: { id: (profile as any).settings.id },
+            updatedSettings = await prisma.wholesalerSettings.update({
+                where: { id: profile.wholesalerSettings.id },
                 data: settingsData
             });
         }

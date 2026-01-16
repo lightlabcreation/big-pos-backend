@@ -12,9 +12,46 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.setAppInstance = void 0;
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const router = (0, express_1.Router)();
+// Store app reference for route listing
+let appInstance = null;
+const setAppInstance = (app) => { appInstance = app; };
+exports.setAppInstance = setAppInstance;
+// List all registered routes
+router.get('/routes', (req, res) => {
+    if (!appInstance) {
+        return res.json({ error: 'App instance not set' });
+    }
+    const routes = [];
+    const extractRoutes = (stack, basePath = '') => {
+        stack.forEach((layer) => {
+            if (layer.route) {
+                const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+                routes.push({ method: methods, path: basePath + layer.route.path });
+            }
+            else if (layer.name === 'router' && layer.handle.stack) {
+                const routerPath = layer.regexp.source
+                    .replace('\\/?', '')
+                    .replace('(?=\\/|$)', '')
+                    .replace(/\\\//g, '/')
+                    .replace('^', '')
+                    .replace(/\(\?:\(\[\^\\\/\]\+\?\)\)/g, ':param');
+                extractRoutes(layer.handle.stack, basePath + routerPath);
+            }
+        });
+    };
+    extractRoutes(appInstance._router.stack);
+    // Filter for admin routes
+    const adminRoutes = routes.filter(r => r.path.includes('/admin'));
+    res.json({
+        totalRoutes: routes.length,
+        adminRoutes: adminRoutes,
+        allRoutes: routes
+    });
+});
 router.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         // 1. Check Date

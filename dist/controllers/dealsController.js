@@ -62,7 +62,7 @@ const updateDeal = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         if (data.expectedCloseDate)
             data.expectedCloseDate = new Date(data.expectedCloseDate);
         const deal = yield prisma_1.default.deal.update({
-            where: { id },
+            where: { id: Number(id) },
             data
         });
         res.json({ success: true, message: 'Deal updated', deal });
@@ -76,7 +76,7 @@ exports.updateDeal = updateDeal;
 const deleteDeal = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        yield prisma_1.default.deal.delete({ where: { id } });
+        yield prisma_1.default.deal.delete({ where: { id: Number(id) } });
         res.json({ success: true, message: 'Deal deleted' });
     }
     catch (error) {

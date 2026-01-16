@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAnalytics = exports.topUpWallet = exports.updateProfile = exports.getProfile = exports.makeRepayment = exports.requestCredit = exports.getCreditOrder = exports.getCreditOrders = exports.getCreditInfo = exports.getWalletTransactions = exports.createOrder = exports.getWholesalerProducts = exports.getDailySales = exports.createSale = exports.scanBarcode = exports.getPOSProducts = exports.getWallet = exports.createBranch = exports.getBranches = exports.getOrder = exports.getOrders = exports.updateProduct = exports.createProduct = exports.getInventory = exports.getDashboardStats = void 0;
+exports.getSettlementInvoice = exports.getSettlementInvoices = exports.unlinkCustomer = exports.getLinkedCustomers = exports.rejectCustomerLinkRequest = exports.approveCustomerLinkRequest = exports.getCustomerLinkRequests = exports.cancelLinkRequest = exports.getMyLinkRequests = exports.sendLinkRequest = exports.getAvailableWholesalers = exports.getAnalytics = exports.topUpWallet = exports.updateProfile = exports.getProfile = exports.makeRepayment = exports.requestCredit = exports.getCreditOrder = exports.getCreditOrders = exports.getCreditInfo = exports.getWalletTransactions = exports.createOrder = exports.getWholesalerProducts = exports.getDailySales = exports.fulfillSale = exports.cancelSale = exports.updateSaleStatus = exports.createSale = exports.scanBarcode = exports.getPOSProducts = exports.getWallet = exports.createBranch = exports.getBranches = exports.getOrder = exports.getOrders = exports.updateProduct = exports.createProduct = exports.getInventory = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get dashboard stats
 // Get dashboard stats with comprehensive calculations
@@ -150,7 +150,7 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
         const formattedRecentOrders = recentOrders.map(order => {
             var _a;
             return ({
-                id: order.id.substring(0, 8).toUpperCase(),
+                id: order.id.toString(),
                 customer: ((_a = order.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
                 items: 0, // Need to fetch items count if critical
                 total: order.totalAmount,
@@ -256,7 +256,7 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         if (invoice_number) {
             // Find the order by ID (treating invoice_number as Order ID)
             let order = yield prisma_1.default.order.findUnique({
-                where: { id: invoice_number },
+                where: { id: Number(invoice_number) },
                 include: {
                     orderItems: {
                         include: { product: true }
@@ -283,9 +283,9 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             // Check if already processed (optional, but good practice to avoid duplicates)
             // For now, we allow re-importing which might duplicate or fail on uniqueness. 
             // Let's check if products with this invoiceNumber already exist.
-            const existing = yield prisma_1.default.product.findFirst({
+            const existing = invoice_number ? yield prisma_1.default.product.findFirst({
                 where: { retailerId: retailerProfile.id, invoiceNumber: invoice_number }
-            });
+            }) : null;
             if (existing) {
                 return res.status(400).json({ error: 'Invoice already imported' });
             }
@@ -343,7 +343,7 @@ const updateProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         const { id } = req.params;
         const { name, description, category, price, costPrice, stock } = req.body;
         const product = yield prisma_1.default.product.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 name,
                 description,
@@ -380,10 +380,13 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             where.paymentMethod = payment_status; // Mapping payment_status filter to paymentMethod
         // Search by ID or Customer Name
         if (search) {
+            const searchNum = Number(search);
             where.OR = [
-                { id: { contains: search } },
                 { consumer: { fullName: { contains: search } } }
             ];
+            if (!isNaN(searchNum)) {
+                where.OR.push({ id: searchNum });
+            }
         }
         const sales = yield prisma_1.default.sale.findMany({
             where,
@@ -398,7 +401,7 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             var _a, _b, _c, _d, _e;
             return ({
                 id: sale.id,
-                display_id: sale.id.substring(0, 8).toUpperCase(),
+                display_id: sale.id.toString(),
                 customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
                 customer_phone: ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.phone) || 'N/A',
                 customer_email: (_e = (_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.email,
@@ -436,7 +439,7 @@ const getOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const { id } = req.params;
         const sale = yield prisma_1.default.sale.findFirst({
             where: {
-                id,
+                id: Number(id),
                 retailerId: retailerProfile.id
             },
             include: {
@@ -449,7 +452,7 @@ const getOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         const formattedOrder = {
             id: sale.id,
-            display_id: sale.id.substring(0, 8).toUpperCase(),
+            display_id: sale.id.toString(),
             customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
             customer_phone: ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.phone) || 'N/A',
             customer_email: (_e = (_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.email,
@@ -620,7 +623,7 @@ const scanBarcode = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     }
 });
 exports.scanBarcode = scanBarcode;
-// Create Sale
+// Create Sale (Retailer POS)
 const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
@@ -629,28 +632,70 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         if (!retailerProfile) {
             return res.status(404).json({ error: 'Retailer profile not found' });
         }
-        const { items, payment_method, subtotal, tax_amount, discount, customer_phone, payment_details } = req.body;
+        const { items, payment_method, // 'cash', 'nfc', 'wallet', 'momo'
+        subtotal, tax_amount, discount, customer_phone, payment_details // { pin, uid } for NFC
+         } = req.body;
+        const total = (subtotal + tax_amount - (discount || 0));
         // 1. Validate items and stock
         for (const item of items) {
-            const product = yield prisma_1.default.product.findUnique({ where: { id: item.product_id } });
+            const product = yield prisma_1.default.product.findUnique({ where: { id: Number(item.product_id) } });
             if (!product || product.stock < item.quantity) {
                 return res.status(400).json({
                     error: `Insufficient stock for product: ${(product === null || product === void 0 ? void 0 : product.name) || item.product_id}`
                 });
             }
         }
-        // 2. Perform Transaction (Create Sale, Decrement Stock)
+        // 2. Perform Transaction
         const result = yield prisma_1.default.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
+            let consumerId = null;
+            // --- Handle NFC Payment ---
+            if (payment_method === 'nfc') {
+                const { uid, pin } = payment_details || {};
+                const card = yield prisma.nfcCard.findUnique({ where: { uid } });
+                if (!card)
+                    throw new Error('NFC Card not found');
+                if (card.status !== 'active')
+                    throw new Error('NFC Card is not active');
+                if (pin && card.pin !== pin)
+                    throw new Error('Invalid NFC PIN');
+                if (card.balance < total)
+                    throw new Error('Insufficient NFC card balance');
+                // Deduct from card
+                yield prisma.nfcCard.update({
+                    where: { id: card.id },
+                    data: { balance: { decrement: total } }
+                });
+                consumerId = card.consumerId;
+            }
+            // --- Handle Wallet Payment ---
+            if (payment_method === 'wallet') {
+                if (!customer_phone)
+                    throw new Error('Customer phone required for wallet payment');
+                const consumer = yield prisma.consumerProfile.findFirst({
+                    where: { user: { phone: customer_phone } }
+                });
+                if (!consumer)
+                    throw new Error('Consumer profile not found for this phone number');
+                if (consumer.walletBalance < total)
+                    throw new Error('Insufficient dashboard wallet balance');
+                // Deduct from wallet
+                yield prisma.consumerProfile.update({
+                    where: { id: consumer.id },
+                    data: { walletBalance: { decrement: total } }
+                });
+                consumerId = consumer.id;
+            }
             // Create Sale Record
             const sale = yield prisma.sale.create({
                 data: {
                     retailerId: retailerProfile.id,
-                    totalAmount: (subtotal + tax_amount - (discount || 0)),
+                    consumerId: consumerId,
+                    totalAmount: total,
                     paymentMethod: payment_method,
                     status: 'completed',
                     saleItems: {
                         create: items.map((item) => ({
-                            productId: item.product_id,
+                            productId: Number(item.product_id),
                             quantity: item.quantity,
                             price: item.price
                         }))
@@ -660,9 +705,27 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             // Update Stock
             for (const item of items) {
                 yield prisma.product.update({
-                    where: { id: item.product_id },
+                    where: { id: Number(item.product_id) },
                     data: { stock: { decrement: item.quantity } }
                 });
+            }
+            // Log Transaction if linked to consumer
+            if (consumerId && (payment_method === 'wallet' || payment_method === 'nfc')) {
+                const wallet = yield prisma.wallet.findFirst({
+                    where: { consumerId: consumerId, type: 'dashboard_wallet' }
+                });
+                if (wallet) {
+                    yield prisma.walletTransaction.create({
+                        data: {
+                            walletId: wallet.id,
+                            type: 'purchase',
+                            amount: -total,
+                            description: `POS purchase at ${retailerProfile.shopName}`,
+                            status: 'completed',
+                            reference: sale.id.toString()
+                        }
+                    });
+                }
             }
             return sale;
         }));
@@ -674,6 +737,117 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
     }
 });
 exports.createSale = createSale;
+// Update Sale Status (Retailer side for dashboard orders)
+const updateSaleStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { id } = req.params;
+        let { status, notes } = req.body;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const currentSale = yield prisma_1.default.sale.findUnique({ where: { id: Number(id) } });
+        if (!currentSale || currentSale.retailerId !== retailerProfile.id) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        // Map frontend status names to backend: processing = confirmed
+        if (status === 'processing')
+            status = 'confirmed';
+        // State machine: pending -> confirmed/processing -> ready -> completed / cancelled
+        const validTransitions = {
+            'pending': ['confirmed', 'processing', 'cancelled'],
+            'confirmed': ['ready', 'cancelled'],
+            'processing': ['ready', 'cancelled'],
+            'ready': ['completed', 'delivered'],
+            'completed': [],
+            'delivered': [],
+            'cancelled': []
+        };
+        if (!((_a = validTransitions[currentSale.status]) === null || _a === void 0 ? void 0 : _a.includes(status))) {
+            return res.status(400).json({
+                error: `Invalid status transition from ${currentSale.status} to ${status}`
+            });
+        }
+        const sale = yield prisma_1.default.sale.update({
+            where: { id: Number(id) },
+            data: { status }
+        });
+        res.json({ success: true, sale });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.updateSaleStatus = updateSaleStatus;
+// Cancel a sale/order
+const cancelSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const currentSale = yield prisma_1.default.sale.findUnique({ where: { id: Number(id) } });
+        if (!currentSale || currentSale.retailerId !== retailerProfile.id) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        // Can only cancel pending or confirmed orders
+        if (!['pending', 'confirmed', 'processing'].includes(currentSale.status)) {
+            return res.status(400).json({
+                error: `Cannot cancel order in ${currentSale.status} status`
+            });
+        }
+        const sale = yield prisma_1.default.sale.update({
+            where: { id: Number(id) },
+            data: {
+                status: 'cancelled'
+                // Could add cancelReason field if exists in schema
+            }
+        });
+        res.json({ success: true, sale, message: 'Order cancelled successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.cancelSale = cancelSale;
+// Fulfill/Complete an order
+const fulfillSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const currentSale = yield prisma_1.default.sale.findUnique({ where: { id: Number(id) } });
+        if (!currentSale || currentSale.retailerId !== retailerProfile.id) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        // Can only fulfill ready orders
+        if (!['ready', 'confirmed', 'processing'].includes(currentSale.status)) {
+            return res.status(400).json({
+                error: `Cannot fulfill order in ${currentSale.status} status`
+            });
+        }
+        const sale = yield prisma_1.default.sale.update({
+            where: { id: Number(id) },
+            data: { status: 'completed' }
+        });
+        res.json({ success: true, sale, message: 'Order completed successfully' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.fulfillSale = fulfillSale;
 // Get Daily Sales Stats
 const getDailySales = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -720,13 +894,49 @@ exports.getDailySales = getDailySales;
 // WHOLESALE ORDERING FUNCTIONS
 // ==========================================
 // Get Wholesaler Products
+// NEW LOGIC:
+// - Retailer can view products of ANY wholesaler (READ-ONLY for discovery)
+// - Retailer can ONLY BUY from linked wholesaler
+// - If wholesalerId param provided, show that wholesaler's products
+// - If no wholesalerId, show linked wholesaler's products (if linked)
 const getWholesalerProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { search, category, limit = '50', offset = '0' } = req.query;
-        const where = {
-            wholesalerId: { not: null }, // Only products belonging to wholesalers
-            status: 'active'
-        };
+        const { search, category, limit = '50', offset = '0', wholesalerId } = req.query;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const isLinked = !!retailerProfile.linkedWholesalerId;
+        let canBuy = false;
+        let viewingWholesalerId = null;
+        const where = { status: 'active' };
+        // Case 1: Viewing specific wholesaler's products (for discovery)
+        if (wholesalerId) {
+            viewingWholesalerId = parseInt(wholesalerId);
+            where.wholesalerId = viewingWholesalerId;
+            // Can only buy if this is the linked wholesaler
+            canBuy = isLinked && retailerProfile.linkedWholesalerId === viewingWholesalerId;
+        }
+        // Case 2: No wholesalerId specified
+        else if (isLinked) {
+            // Show linked wholesaler's products
+            viewingWholesalerId = retailerProfile.linkedWholesalerId;
+            where.wholesalerId = retailerProfile.linkedWholesalerId;
+            canBuy = true;
+        }
+        else {
+            // Not linked and no wholesalerId specified - return empty with guidance
+            return res.json({
+                success: true,
+                products: [],
+                isLinked: false,
+                canBuy: false,
+                linkedWholesalerId: null,
+                message: 'Please select a wholesaler to view their products, or link with a wholesaler to start ordering.'
+            });
+        }
         if (search) {
             where.OR = [
                 { name: { contains: search } },
@@ -738,11 +948,20 @@ const getWholesalerProducts = (req, res) => __awaiter(void 0, void 0, void 0, fu
         }
         const products = yield prisma_1.default.product.findMany({
             where,
-            include: { wholesalerProfile: true }, // Include wholesaler info
+            include: { wholesalerProfile: true },
             take: parseInt(limit),
             skip: parseInt(offset),
             orderBy: { name: 'asc' }
         });
+        // Get wholesaler info
+        let wholesalerInfo = null;
+        if (viewingWholesalerId) {
+            const wholesaler = yield prisma_1.default.wholesalerProfile.findUnique({
+                where: { id: viewingWholesalerId },
+                select: { id: true, companyName: true, address: true }
+            });
+            wholesalerInfo = wholesaler;
+        }
         // Map to frontend expected format
         const formattedProducts = products.map(p => {
             var _a;
@@ -750,14 +969,22 @@ const getWholesalerProducts = (req, res) => __awaiter(void 0, void 0, void 0, fu
                 id: p.id,
                 name: p.name,
                 category: p.category,
-                wholesaler_price: p.price, // Wholesaler's selling price
+                wholesaler_price: p.price,
                 stock_available: p.stock,
-                min_order: 1, // Default min order
+                min_order: 1,
                 unit: p.unit || 'unit',
                 wholesaler_name: (_a = p.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName
             });
         });
-        res.json({ products: formattedProducts });
+        res.json({
+            success: true,
+            products: formattedProducts,
+            isLinked,
+            canBuy,
+            linkedWholesalerId: retailerProfile.linkedWholesalerId,
+            viewingWholesalerId,
+            wholesalerInfo
+        });
     }
     catch (error) {
         res.status(500).json({ error: error.message });
@@ -765,6 +992,7 @@ const getWholesalerProducts = (req, res) => __awaiter(void 0, void 0, void 0, fu
 });
 exports.getWholesalerProducts = getWholesalerProducts;
 // Create Wholesaler Order
+// ACCOUNT LINKING ENFORCEMENT: Retailer can ONLY order from ONE Wholesaler after approval
 const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
@@ -773,25 +1001,61 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         if (!retailerProfile) {
             return res.status(404).json({ error: 'Retailer profile not found' });
         }
+        // ==========================================
+        // ACCOUNT LINKING ENFORCEMENT (MANDATORY)
+        // Retailer MUST be linked to a wholesaler before placing orders
+        // ==========================================
+        if (!retailerProfile.linkedWholesalerId) {
+            return res.status(403).json({
+                success: false,
+                error: 'You must be linked to a wholesaler before placing orders. Please send a link request and wait for approval.',
+                requiresLinking: true
+            });
+        }
         const { items, totalAmount } = req.body;
         if (!items || items.length === 0) {
             return res.status(400).json({ error: 'Order must contain items' });
         }
-        // Determine wholesaler from the first product (assuming single wholesaler per order for simplicity 
-        // or strictly enforce items from same wholesaler in logic, but here we just take the first one found)
+        // Determine wholesaler from the first product
         const firstProductId = items[0].product_id;
         const firstProduct = yield prisma_1.default.product.findUnique({ where: { id: firstProductId } });
         if (!firstProduct || !firstProduct.wholesalerId) {
             return res.status(400).json({ error: 'Product does not belong to a wholesaler' });
         }
         const wholesalerId = firstProduct.wholesalerId;
-        // Transaction: Create Order, Debit Wallet
+        // Verify retailer is ordering from their linked wholesaler ONLY
+        if (retailerProfile.linkedWholesalerId !== wholesalerId) {
+            return res.status(403).json({
+                success: false,
+                error: 'You can only order from your linked wholesaler. These products belong to a different wholesaler.',
+                linkedWholesalerId: retailerProfile.linkedWholesalerId,
+                attemptedWholesalerId: wholesalerId
+            });
+        }
+        // Verify ALL items belong to the SAME (linked) wholesaler
+        for (const item of items) {
+            const product = yield prisma_1.default.product.findUnique({ where: { id: item.product_id } });
+            if (!product || product.wholesalerId !== wholesalerId) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'All items must belong to your linked wholesaler.'
+                });
+            }
+        }
+        // Transaction: Create Order, Debit Wallet, Link Retailer to Wholesaler (if first order)
         const result = yield prisma_1.default.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
             // 1. Check Wallet
             if (retailerProfile.walletBalance < totalAmount) {
                 throw new Error('Insufficient wallet balance');
             }
-            // 2. Create Order
+            // 2. Auto-link retailer to wholesaler on FIRST order (if not already linked)
+            if (!retailerProfile.linkedWholesalerId) {
+                yield prisma.retailerProfile.update({
+                    where: { id: retailerProfile.id },
+                    data: { linkedWholesalerId: wholesalerId }
+                });
+            }
+            // 3. Create Order
             const order = yield prisma.order.create({
                 data: {
                     retailerId: retailerProfile.id,
@@ -807,7 +1071,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     }
                 }
             });
-            // 3. Debit Wallet
+            // 4. Debit Wallet
             yield prisma.retailerProfile.update({
                 where: { id: retailerProfile.id },
                 data: { walletBalance: { decrement: totalAmount } }
@@ -850,8 +1114,8 @@ const getWalletTransactions = (req, res) => __awaiter(void 0, void 0, void 0, fu
             type: 'debit',
             amount: o.totalAmount,
             balance_after: 0, // Not tracked per row
-            description: `Order #${o.id.substring(0, 8)}`,
-            reference: o.id,
+            description: `Order #${o.id.toString().substring(0, 8)}`,
+            reference: o.id.toString(),
             status: 'completed',
             created_at: o.createdAt
         }));
@@ -937,7 +1201,7 @@ const getCreditOrders = (req, res) => __awaiter(void 0, void 0, void 0, function
             var _a;
             return ({
                 id: o.id,
-                display_id: o.id.substring(0, 8).toUpperCase(),
+                display_id: o.id.toString().substring(0, 8).toUpperCase(),
                 wholesaler_name: (_a = o.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName,
                 total_amount: o.totalAmount,
                 amount_paid: 0, // In future, check related payments
@@ -960,14 +1224,14 @@ const getCreditOrder = (req, res) => __awaiter(void 0, void 0, void 0, function*
     try {
         const { id } = req.params;
         const order = yield prisma_1.default.order.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { wholesalerProfile: true, orderItems: { include: { product: true } } }
         });
         if (!order)
             return res.status(404).json({ error: 'Order not found' });
         res.json({
             id: order.id,
-            display_id: order.id.substring(0, 8).toUpperCase(),
+            display_id: order.id.toString().substring(0, 8).toUpperCase(),
             wholesaler_name: (_a = order.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName,
             total_amount: order.totalAmount,
             amount_paid: 0,
@@ -975,7 +1239,7 @@ const getCreditOrder = (req, res) => __awaiter(void 0, void 0, void 0, function*
             status: order.status,
             due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
             created_at: order.createdAt,
-            items: order.orderItems.map(i => ({
+            items: order.orderItems.map((i) => ({
                 id: i.id,
                 product_name: i.product.name,
                 quantity: i.quantity,
@@ -1032,7 +1296,7 @@ const makeRepayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             return res.status(400).json({ error: 'Invalid repayment amount' });
         }
         // 1. Get the Order
-        const order = yield prisma_1.default.order.findUnique({ where: { id } });
+        const order = yield prisma_1.default.order.findUnique({ where: { id: Number(id) } });
         if (!order)
             return res.status(404).json({ error: 'Order not found' });
         // 2. Validate Repayment (Mock check: if amount > pending)
@@ -1084,9 +1348,11 @@ exports.makeRepayment = makeRepayment;
 // ==========================================
 // Get Retailer Profile
 const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f;
     try {
+        const userId = Number(req.user.id);
         const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
-            where: { userId: req.user.id },
+            where: { userId: userId },
             include: {
                 user: {
                     select: {
@@ -1096,6 +1362,17 @@ const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                         role: true,
                         name: true,
                     }
+                },
+                // Include linked wholesaler details
+                linkedWholesaler: {
+                    include: {
+                        user: {
+                            select: {
+                                phone: true,
+                                email: true,
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -1103,30 +1380,44 @@ const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             return res.status(404).json({ error: 'Retailer profile not found' });
         }
         const profile = {
-            // User info
-            name: retailerProfile.user.name,
-            email: retailerProfile.user.email,
-            phone: retailerProfile.user.phone,
+            // User info nested to match frontend expectation
+            user: {
+                name: (_a = retailerProfile.user) === null || _a === void 0 ? void 0 : _a.name,
+                email: (_b = retailerProfile.user) === null || _b === void 0 ? void 0 : _b.email,
+                phone: (_c = retailerProfile.user) === null || _c === void 0 ? void 0 : _c.phone,
+            },
             // Retailer specific info
             id: retailerProfile.id,
-            shop_name: retailerProfile.shopName,
+            companyName: retailerProfile.shopName, // Frontend expects companyName
+            shopName: retailerProfile.shopName,
             address: retailerProfile.address,
-            tin_number: "TIN123456789", // Mock as schema doesn't have it
-            contact_person: retailerProfile.user.name, // Use user name as contact person
-            is_verified: true, // Mock
-            // Settings (Mock)
-            notifications: {
-                push: true,
-                email: true,
-                sms: true,
-                ussd: true
-            },
-            payment_settings: {
-                default_terms: 'net30',
-                accepted_methods: ['wallet', 'mobile_money', 'cash']
+            contact_person: (_d = retailerProfile.user) === null || _d === void 0 ? void 0 : _d.name,
+            is_verified: retailerProfile.isVerified,
+            tinNumber: 'TIN123456789', // Placeholder as it's not in schema yet
+            // Linked Wholesaler Info (if linked)
+            linkedWholesaler: retailerProfile.linkedWholesaler ? {
+                id: retailerProfile.linkedWholesaler.id,
+                companyName: retailerProfile.linkedWholesaler.companyName,
+                contactPerson: retailerProfile.linkedWholesaler.contactPerson,
+                phone: (_e = retailerProfile.linkedWholesaler.user) === null || _e === void 0 ? void 0 : _e.phone,
+                email: (_f = retailerProfile.linkedWholesaler.user) === null || _f === void 0 ? void 0 : _f.email,
+                address: retailerProfile.linkedWholesaler.address,
+            } : null,
+            // Default Settings
+            settings: {
+                notifications: {
+                    push: true,
+                    email: true,
+                    sms: true,
+                    ussd: true
+                },
+                payment_settings: {
+                    default_terms: 'net30',
+                    accepted_methods: ['wallet', 'mobile_money', 'cash']
+                }
             }
         };
-        res.json(profile);
+        res.json({ success: true, profile });
     }
     catch (error) {
         console.error('Error fetching profile:', error);
@@ -1137,25 +1428,29 @@ exports.getProfile = getProfile;
 // Update Retailer Profile
 const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
+        const userId = Number(req.user.id);
         const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
-            where: { userId: req.user.id }
+            where: { userId: userId }
         });
         if (!retailerProfile) {
             return res.status(404).json({ error: 'Retailer profile not found' });
         }
         const { name, // User name (Contact Person)
-        shop_name, address, tin_number, email } = req.body;
+        shop_name, company_name, // Frontend sends this
+        address, tin_number, email } = req.body;
+        // Use company_name if shop_name is not provided
+        const shopNameUpdate = shop_name || company_name;
         // Update User model if needed
         if (name || email) {
             yield prisma_1.default.user.update({
-                where: { id: req.user.id },
+                where: { id: userId },
                 data: Object.assign(Object.assign({}, (name && { name })), (email && { email }))
             });
         }
         // Update RetailerProfile model
         const updatedRetailer = yield prisma_1.default.retailerProfile.update({
             where: { id: retailerProfile.id },
-            data: Object.assign(Object.assign({}, (shop_name && { shopName: shop_name })), (address && { address })
+            data: Object.assign(Object.assign({}, (shopNameUpdate && { shopName: shopNameUpdate })), (address && { address })
             // tin_number is ignored as it's not in schema
             )
         });
@@ -1230,8 +1525,7 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         });
         // 3. Revenue Metrics
         const totalRevenue = salesInPeriod.reduce((sum, s) => sum + s.totalAmount, 0);
-        // Compare with previous period (simplified mock logic for change %)
-        const changePercentage = 15.2;
+        const changePercentage = totalRevenue > 0 ? 0 : 0; // Growth calculation requires historical comparison, setting to 0 for literal correctness
         // 4. Daily Revenue (Last 7 Days) - specific for chart
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(now.getDate() - 7);
@@ -1269,7 +1563,7 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const productStats = new Map();
         salesInPeriod.forEach(sale => {
             sale.saleItems.forEach(item => {
-                const pid = item.productId;
+                const pid = item.productId.toString();
                 const current = productStats.get(pid) || { name: item.product.name, quantity: 0, revenue: 0 };
                 productStats.set(pid, {
                     name: item.product.name,
@@ -1285,7 +1579,7 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const customerStats = new Map();
         salesInPeriod.forEach(sale => {
             if (sale.consumerProfile) {
-                const cid = sale.consumerId;
+                const cid = sale.consumerId.toString();
                 const current = customerStats.get(cid) || { name: sale.consumerProfile.fullName || 'Unknown', orders: 0, spent: 0 };
                 customerStats.set(cid, {
                     name: sale.consumerProfile.fullName || 'Unknown',
@@ -1333,7 +1627,7 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             },
             customers: {
                 total: customerStats.size,
-                newThisMonth: 5, // Mock
+                newThisMonth: 0,
                 topBuyers: topBuyers
             }
         });
@@ -1344,3 +1638,542 @@ const getAnalytics = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     }
 });
 exports.getAnalytics = getAnalytics;
+// ==========================================
+// WHOLESALER DISCOVERY & LINK REQUEST APIs
+// ==========================================
+// Get available wholesalers for retailer to discover
+const getAvailableWholesalers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { search } = req.query;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        // Get ALL wholesalers for discovery (retailers can send link requests to any wholesaler)
+        const where = {};
+        if (search) {
+            where.companyName = { contains: search };
+        }
+        const wholesalers = yield prisma_1.default.wholesalerProfile.findMany({
+            where,
+            include: {
+                user: {
+                    select: {
+                        phone: true,
+                        email: true,
+                        isActive: true,
+                    }
+                },
+                linkedRetailers: {
+                    select: { id: true }
+                },
+                inventory: {
+                    where: { stock: { gt: 0 } },
+                    select: { id: true }
+                }
+            }
+        });
+        // Get existing link requests from this retailer
+        const existingRequests = yield prisma_1.default.linkRequest.findMany({
+            where: { retailerId: retailerProfile.id },
+            select: { wholesalerId: true, status: true }
+        });
+        const requestMap = new Map(existingRequests.map(r => [r.wholesalerId, r.status]));
+        // Format response
+        const formattedWholesalers = wholesalers
+            .filter(w => { var _a; return (_a = w.user) === null || _a === void 0 ? void 0 : _a.isActive; })
+            .map(w => {
+            var _a, _b, _c, _d;
+            return ({
+                id: w.id,
+                companyName: w.companyName,
+                contactPerson: w.contactPerson,
+                address: w.address,
+                phone: (_a = w.user) === null || _a === void 0 ? void 0 : _a.phone,
+                email: (_b = w.user) === null || _b === void 0 ? void 0 : _b.email,
+                isVerified: w.isVerified,
+                retailerCount: ((_c = w.linkedRetailers) === null || _c === void 0 ? void 0 : _c.length) || 0,
+                productCount: ((_d = w.inventory) === null || _d === void 0 ? void 0 : _d.length) || 0,
+                // Link status for this retailer
+                isLinked: retailerProfile.linkedWholesalerId === w.id,
+                requestStatus: requestMap.get(w.id) || null, // pending, approved, rejected, or null
+            });
+        });
+        res.json({
+            success: true,
+            wholesalers: formattedWholesalers,
+            total: formattedWholesalers.length,
+            currentLinkedWholesalerId: retailerProfile.linkedWholesalerId
+        });
+    }
+    catch (error) {
+        console.error('Error fetching wholesalers:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getAvailableWholesalers = getAvailableWholesalers;
+// Send link request to wholesaler
+// RULE: Retailer can send request to ONLY ONE wholesaler at a time
+const sendLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { wholesalerId, message } = req.body;
+        if (!wholesalerId) {
+            return res.status(400).json({ success: false, error: 'Wholesaler ID is required' });
+        }
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        // Check if already linked to a wholesaler
+        if (retailerProfile.linkedWholesalerId) {
+            return res.status(400).json({
+                success: false,
+                error: 'You are already linked to a wholesaler. Retailers can only be linked to one wholesaler.'
+            });
+        }
+        // IMPORTANT: Check if retailer already has ANY pending request
+        const anyPendingRequest = yield prisma_1.default.linkRequest.findFirst({
+            where: {
+                retailerId: retailerProfile.id,
+                status: 'pending'
+            },
+            include: {
+                wholesaler: { select: { companyName: true } }
+            }
+        });
+        if (anyPendingRequest) {
+            return res.status(400).json({
+                success: false,
+                error: `You already have a pending request to ${anyPendingRequest.wholesaler.companyName}. You can only send one request at a time. Cancel the existing request to send a new one.`,
+                existingRequestId: anyPendingRequest.id,
+                existingWholesalerId: anyPendingRequest.wholesalerId
+            });
+        }
+        // Check if wholesaler exists
+        const wholesaler = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { id: wholesalerId }
+        });
+        if (!wholesaler) {
+            return res.status(404).json({ success: false, error: 'Wholesaler not found' });
+        }
+        // Check for existing request to THIS wholesaler
+        const existingRequest = yield prisma_1.default.linkRequest.findUnique({
+            where: {
+                retailerId_wholesalerId: {
+                    retailerId: retailerProfile.id,
+                    wholesalerId: wholesalerId
+                }
+            }
+        });
+        if (existingRequest) {
+            if (existingRequest.status === 'approved') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Your request was already approved. Contact admin if not linked.'
+                });
+            }
+            // If rejected, allow to send again - update the existing request
+            if (existingRequest.status === 'rejected') {
+                const updatedRequest = yield prisma_1.default.linkRequest.update({
+                    where: { id: existingRequest.id },
+                    data: {
+                        status: 'pending',
+                        message: message || null,
+                        rejectionReason: null,
+                        respondedAt: null,
+                        updatedAt: new Date()
+                    }
+                });
+                return res.json({
+                    success: true,
+                    message: 'Link request re-sent successfully',
+                    request: updatedRequest
+                });
+            }
+        }
+        // Create new link request
+        const linkRequest = yield prisma_1.default.linkRequest.create({
+            data: {
+                retailerId: retailerProfile.id,
+                wholesalerId: wholesalerId,
+                message: message || null,
+                status: 'pending'
+            }
+        });
+        res.json({
+            success: true,
+            message: 'Link request sent successfully',
+            request: linkRequest
+        });
+    }
+    catch (error) {
+        console.error('Error sending link request:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.sendLinkRequest = sendLinkRequest;
+// Get my link requests (for retailer)
+const getMyLinkRequests = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const requests = yield prisma_1.default.linkRequest.findMany({
+            where: { retailerId: retailerProfile.id },
+            include: {
+                wholesaler: {
+                    include: {
+                        user: {
+                            select: { phone: true, email: true }
+                        }
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        const formattedRequests = requests.map(r => {
+            var _a;
+            return ({
+                id: r.id,
+                wholesalerId: r.wholesalerId,
+                wholesalerName: r.wholesaler.companyName,
+                wholesalerPhone: (_a = r.wholesaler.user) === null || _a === void 0 ? void 0 : _a.phone,
+                wholesalerAddress: r.wholesaler.address,
+                status: r.status,
+                message: r.message,
+                rejectionReason: r.rejectionReason,
+                createdAt: r.createdAt,
+                respondedAt: r.respondedAt
+            });
+        });
+        res.json({
+            success: true,
+            requests: formattedRequests
+        });
+    }
+    catch (error) {
+        console.error('Error fetching link requests:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getMyLinkRequests = getMyLinkRequests;
+// Cancel link request (for retailer)
+const cancelLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { requestId } = req.params;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const request = yield prisma_1.default.linkRequest.findFirst({
+            where: {
+                id: parseInt(requestId),
+                retailerId: retailerProfile.id,
+                status: 'pending'
+            }
+        });
+        if (!request) {
+            return res.status(404).json({ success: false, error: 'Pending request not found' });
+        }
+        yield prisma_1.default.linkRequest.delete({
+            where: { id: request.id }
+        });
+        res.json({
+            success: true,
+            message: 'Link request cancelled successfully'
+        });
+    }
+    catch (error) {
+        console.error('Error cancelling link request:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.cancelLinkRequest = cancelLinkRequest;
+// ==========================================
+// CUSTOMER LINK REQUEST MANAGEMENT (Retailer Side)
+// ==========================================
+// Get customer link requests for this retailer
+const getCustomerLinkRequests = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { status } = req.query;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const whereClause = { retailerId: retailerProfile.id };
+        if (status) {
+            whereClause.status = status;
+        }
+        const requests = yield prisma_1.default.customerLinkRequest.findMany({
+            where: whereClause,
+            include: {
+                customer: {
+                    include: {
+                        user: {
+                            select: { name: true, phone: true, email: true }
+                        }
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        // Calculate stats
+        const allRequests = yield prisma_1.default.customerLinkRequest.findMany({
+            where: { retailerId: retailerProfile.id }
+        });
+        const stats = {
+            pending: allRequests.filter(r => r.status === 'pending').length,
+            approved: allRequests.filter(r => r.status === 'approved').length,
+            rejected: allRequests.filter(r => r.status === 'rejected').length,
+            total: allRequests.length
+        };
+        const formattedRequests = requests.map(r => {
+            var _a, _b, _c;
+            return ({
+                id: r.id,
+                customerId: r.customerId,
+                customerName: r.customer.fullName || ((_a = r.customer.user) === null || _a === void 0 ? void 0 : _a.name) || 'Unknown',
+                customerPhone: (_b = r.customer.user) === null || _b === void 0 ? void 0 : _b.phone,
+                customerEmail: (_c = r.customer.user) === null || _c === void 0 ? void 0 : _c.email,
+                customerAddress: r.customer.address,
+                isVerified: r.customer.isVerified,
+                status: r.status,
+                message: r.message,
+                rejectionReason: r.rejectionReason,
+                createdAt: r.createdAt,
+                respondedAt: r.respondedAt
+            });
+        });
+        res.json({ success: true, requests: formattedRequests, stats });
+    }
+    catch (error) {
+        console.error('Error fetching customer link requests:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getCustomerLinkRequests = getCustomerLinkRequests;
+// Approve a customer link request
+const approveCustomerLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { requestId } = req.params;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const request = yield prisma_1.default.customerLinkRequest.findFirst({
+            where: {
+                id: parseInt(requestId),
+                retailerId: retailerProfile.id,
+                status: 'pending'
+            },
+            include: { customer: true }
+        });
+        if (!request) {
+            return res.status(404).json({ success: false, error: 'Pending request not found' });
+        }
+        // NEW: Customer can be linked to MULTIPLE retailers
+        // No need to check if already linked elsewhere - just approve this request
+        // The CustomerLinkRequest table tracks per-retailer approval status
+        // Update request status to approved
+        yield prisma_1.default.customerLinkRequest.update({
+            where: { id: request.id },
+            data: {
+                status: 'approved',
+                respondedAt: new Date()
+            }
+        });
+        res.json({ success: true, message: 'Customer link request approved successfully' });
+    }
+    catch (error) {
+        console.error('Error approving customer link request:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.approveCustomerLinkRequest = approveCustomerLinkRequest;
+// Reject a customer link request
+const rejectCustomerLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { requestId } = req.params;
+        const { reason } = req.body;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const request = yield prisma_1.default.customerLinkRequest.findFirst({
+            where: {
+                id: parseInt(requestId),
+                retailerId: retailerProfile.id,
+                status: 'pending'
+            }
+        });
+        if (!request) {
+            return res.status(404).json({ success: false, error: 'Pending request not found' });
+        }
+        yield prisma_1.default.customerLinkRequest.update({
+            where: { id: request.id },
+            data: {
+                status: 'rejected',
+                rejectionReason: reason || null,
+                respondedAt: new Date()
+            }
+        });
+        res.json({ success: true, message: 'Customer link request rejected' });
+    }
+    catch (error) {
+        console.error('Error rejecting customer link request:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.rejectCustomerLinkRequest = rejectCustomerLinkRequest;
+// Get linked customers for this retailer
+const getLinkedCustomers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const customers = yield prisma_1.default.consumerProfile.findMany({
+            where: { linkedRetailerId: retailerProfile.id },
+            include: {
+                user: {
+                    select: { name: true, phone: true, email: true }
+                },
+                sales: {
+                    where: { retailerId: retailerProfile.id },
+                    select: { id: true, totalAmount: true }
+                }
+            }
+        });
+        const formattedCustomers = customers.map(c => {
+            var _a, _b, _c;
+            return ({
+                id: c.id,
+                name: c.fullName || ((_a = c.user) === null || _a === void 0 ? void 0 : _a.name) || 'Unknown',
+                phone: (_b = c.user) === null || _b === void 0 ? void 0 : _b.phone,
+                email: (_c = c.user) === null || _c === void 0 ? void 0 : _c.email,
+                address: c.address,
+                isVerified: c.isVerified,
+                membershipType: c.membershipType,
+                orderCount: c.sales.length,
+                totalPurchased: c.sales.reduce((sum, s) => sum + s.totalAmount, 0)
+            });
+        });
+        res.json({ success: true, customers: formattedCustomers, total: formattedCustomers.length });
+    }
+    catch (error) {
+        console.error('Error fetching linked customers:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getLinkedCustomers = getLinkedCustomers;
+// Unlink a customer
+const unlinkCustomer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { customerId } = req.params;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const customer = yield prisma_1.default.consumerProfile.findFirst({
+            where: {
+                id: parseInt(customerId),
+                linkedRetailerId: retailerProfile.id
+            }
+        });
+        if (!customer) {
+            return res.status(404).json({ success: false, error: 'Linked customer not found' });
+        }
+        yield prisma_1.default.consumerProfile.update({
+            where: { id: customer.id },
+            data: { linkedRetailerId: null }
+        });
+        res.json({ success: true, message: 'Customer unlinked successfully' });
+    }
+    catch (error) {
+        console.error('Error unlinking customer:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.unlinkCustomer = unlinkCustomer;
+// ==========================================
+// SETTLEMENT INVOICES (Read-only for Retailer)
+// ==========================================
+// Get assigned settlement invoices for this retailer
+const getSettlementInvoices = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { month } = req.query;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const where = {
+            retailerId: retailerProfile.id,
+            partyType: 'retailer'
+        };
+        if (month) {
+            where.settlementMonth = month;
+        }
+        const invoices = yield prisma_1.default.settlementInvoice.findMany({
+            where,
+            orderBy: { settlementMonth: 'desc' }
+        });
+        res.json({
+            success: true,
+            invoices,
+            total: invoices.length
+        });
+    }
+    catch (error) {
+        console.error('Get Settlement Invoices Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getSettlementInvoices = getSettlementInvoices;
+// Get single settlement invoice detail
+const getSettlementInvoice = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer profile not found' });
+        }
+        const invoice = yield prisma_1.default.settlementInvoice.findFirst({
+            where: {
+                id: Number(id),
+                retailerId: retailerProfile.id
+            }
+        });
+        if (!invoice) {
+            return res.status(404).json({ success: false, error: 'Invoice not found' });
+        }
+        res.json({ success: true, invoice });
+    }
+    catch (error) {
+        console.error('Get Settlement Invoice Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.getSettlementInvoice = getSettlementInvoice;

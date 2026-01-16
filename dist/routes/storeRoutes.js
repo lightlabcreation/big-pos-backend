@@ -6,10 +6,11 @@ const customerController_1 = require("../controllers/customerController");
 const gasController_1 = require("../controllers/gasController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = (0, express_1.Router)();
-// Public routes
+// Public routes - Only retailers list is public (for discovery)
 router.get('/retailers', storeController_1.getRetailers);
-router.get('/categories', storeController_1.getCategories);
-router.get('/products', storeController_1.getProducts);
+router.get('/categories', authMiddleware_1.authenticate, storeController_1.getCategories);
+// Products route - REQUIRES authentication and linking
+router.get('/products', authMiddleware_1.authenticate, storeController_1.getProducts);
 // Protected routes - Auth
 router.post('/auth/logout', authMiddleware_1.authenticate, customerController_1.logout);
 // Protected routes - Customer Profile
@@ -29,6 +30,7 @@ router.get('/gas/meters', authMiddleware_1.authenticate, gasController_1.getGasM
 router.post('/gas/meters', authMiddleware_1.authenticate, gasController_1.addGasMeter);
 router.delete('/gas/meters/:id', authMiddleware_1.authenticate, gasController_1.removeGasMeter);
 router.post('/gas/topup', authMiddleware_1.authenticate, gasController_1.topupGas);
+router.post('/gas/usage', authMiddleware_1.authenticate, gasController_1.recordGasUsage);
 router.get('/gas/usage', authMiddleware_1.authenticate, gasController_1.getGasUsage);
 // Protected routes - Gas Rewards
 router.get('/gas/rewards/balance', authMiddleware_1.authenticate, gasController_1.getGasRewardsBalance);
@@ -37,6 +39,11 @@ router.get('/gas/rewards/leaderboard', authMiddleware_1.authenticate, gasControl
 // Rewards - Referral & Redemption
 router.get('/rewards/referral-code', authMiddleware_1.authenticate, customerController_1.getReferralCode);
 router.post('/rewards/redeem', authMiddleware_1.authenticate, customerController_1.redeemGasRewards);
+// Retailer Discovery & Link Request Routes (Customer-Retailer Linking)
+router.get('/retailers/available', authMiddleware_1.authenticate, customerController_1.getAvailableRetailers);
+router.post('/retailers/link-request', authMiddleware_1.authenticate, customerController_1.sendCustomerLinkRequest);
+router.get('/retailers/link-requests', authMiddleware_1.authenticate, customerController_1.getMyCustomerLinkRequests);
+router.delete('/retailers/link-request/:requestId', authMiddleware_1.authenticate, customerController_1.cancelCustomerLinkRequest);
 // Protected routes - Orders
 router.get('/customers/me/orders', authMiddleware_1.authenticate, storeController_1.getMyOrders);
 router.get('/orders/:id', authMiddleware_1.authenticate, gasController_1.getOrderDetails);
@@ -48,10 +55,13 @@ router.get('/orders', authMiddleware_1.authenticate, storeController_1.getMyOrde
 router.get('/wallet/balance', authMiddleware_1.authenticate, storeController_1.getWalletBalance);
 router.get('/rewards/balance', authMiddleware_1.authenticate, storeController_1.getRewardsBalance);
 router.get('/loans', authMiddleware_1.authenticate, storeController_1.getLoans); // List of loans
+router.get('/loans/products', authMiddleware_1.authenticate, storeController_1.getLoanProducts);
 router.get('/loans/active', authMiddleware_1.authenticate, storeController_1.getActiveLoanLedger); // Active loan detailed ledger
 router.get('/loans/transactions', authMiddleware_1.authenticate, storeController_1.getCreditTransactions); // filtered credit-related transactions
 router.get('/loans/eligibility', authMiddleware_1.authenticate, storeController_1.checkLoanEligibility);
 router.post('/loans/apply', authMiddleware_1.authenticate, storeController_1.applyForLoan);
 router.post('/loans/:id/repay', authMiddleware_1.authenticate, storeController_1.repayLoan);
 router.get('/loans/food-credit', authMiddleware_1.authenticate, storeController_1.getFoodCredit);
+// Reward Gas
+router.get('/reward-gas/balance', authMiddleware_1.authenticate, storeController_1.getRewardGasBalance);
 exports.default = router;

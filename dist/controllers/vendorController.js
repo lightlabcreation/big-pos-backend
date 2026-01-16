@@ -34,7 +34,7 @@ const getVendor = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         const vendor = yield prisma.supplier.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { products: true }
         });
         if (!vendor) {
@@ -76,7 +76,7 @@ const updateVendor = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const { id } = req.params;
         const { name, contactPerson, phone, email, address, status } = req.body;
         const vendor = yield prisma.supplier.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 name,
                 contactPerson,
@@ -98,7 +98,7 @@ const deleteVendor = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     try {
         const { id } = req.params;
         yield prisma.supplier.delete({
-            where: { id }
+            where: { id: Number(id) }
         });
         res.json({ success: true, message: 'Vendor deleted successfully' });
     }

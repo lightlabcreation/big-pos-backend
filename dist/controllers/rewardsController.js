@@ -97,7 +97,7 @@ const getReferralCode = (req, res) => __awaiter(void 0, void 0, void 0, function
             return res.status(404).json({ success: false, error: 'User not found' });
         }
         // Generate referral code from user ID (simple implementation)
-        const referralCode = 'BIG' + user.id.substring(0, 6).toUpperCase();
+        const referralCode = 'BIG' + user.id.toString().substring(0, 6).toUpperCase();
         res.json({
             success: true,
             data: {

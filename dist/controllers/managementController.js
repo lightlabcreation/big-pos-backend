@@ -273,19 +273,27 @@ const updateSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function*
     try {
         const { id } = req.params;
         const { name, contact_person, email, phone, address, status } = req.body;
-        console.log('✏️ Updating supplier:', id);
+        const supplierId = Number(id);
+        console.log('✏️ Updating supplier:', supplierId);
         const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
             where: { userId: req.user.id }
         });
         if (!wholesalerProfile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
-        // Verify ownership and update
-        const supplier = yield prisma_1.default.supplier.update({
+        // Verify ownership first
+        const existingSupplier = yield prisma_1.default.supplier.findFirst({
             where: {
-                id,
+                id: supplierId,
                 wholesalerId: wholesalerProfile.id
-            },
+            }
+        });
+        if (!existingSupplier) {
+            return res.status(404).json({ error: 'Supplier not found or does not belong to your account' });
+        }
+        // Update using unique ID
+        const supplier = yield prisma_1.default.supplier.update({
+            where: { id: supplierId },
             data: Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (name && { name })), (contact_person && { contactPerson: contact_person })), (email && { email })), (phone && { phone })), (address && { address })), (status && { status })),
             include: {
                 products: true,
@@ -331,19 +339,27 @@ exports.updateSupplier = updateSupplier;
 const deleteSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        console.log('🗑️ Deleting supplier:', id);
+        const supplierId = Number(id);
+        console.log('🗑️ Deleting supplier:', supplierId);
         const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
             where: { userId: req.user.id }
         });
         if (!wholesalerProfile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
-        // Soft delete by setting status to inactive - checking ownership
-        yield prisma_1.default.supplier.update({
+        // Verify ownership first
+        const existingSupplier = yield prisma_1.default.supplier.findFirst({
             where: {
-                id,
+                id: supplierId,
                 wholesalerId: wholesalerProfile.id
-            },
+            }
+        });
+        if (!existingSupplier) {
+            return res.status(404).json({ error: 'Supplier not found or does not belong to your account' });
+        }
+        // Soft delete by setting status to inactive
+        yield prisma_1.default.supplier.update({
+            where: { id: supplierId },
             data: { status: 'inactive' }
         });
         console.log('✅ Supplier deleted (set to inactive)');
@@ -409,7 +425,7 @@ const getProfitInvoiceDetails = (req, res) => __awaiter(void 0, void 0, void 0, 
         const { id } = req.params;
         console.log('🔍 Fetching profit invoice details for ID:', id);
         const invoice = yield prisma_1.default.profitInvoice.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: {
                 order: {
                     include: {

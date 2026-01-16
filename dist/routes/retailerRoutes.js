@@ -11,7 +11,10 @@ router.post('/inventory', retailerController_1.createProduct);
 router.put('/inventory/:id', retailerController_1.updateProduct);
 router.get('/orders', retailerController_1.getOrders);
 router.get('/orders/:id', retailerController_1.getOrder);
-router.post('/orders', retailerController_1.createOrder); // Add this line
+router.put('/orders/:id/status', retailerController_1.updateSaleStatus);
+router.post('/orders/:id/cancel', retailerController_1.cancelSale);
+router.post('/orders/:id/fulfill', retailerController_1.fulfillSale);
+router.post('/orders', retailerController_1.createOrder);
 router.get('/branches', retailerController_1.getBranches);
 router.post('/branches', retailerController_1.createBranch);
 router.get('/wallet', retailerController_1.getWallet);
@@ -35,4 +38,18 @@ router.post('/pos/sale', retailerController_1.createSale);
 router.get('/pos/daily-sales', retailerController_1.getDailySales);
 // Wholesaler Products (for Add Stock)
 router.get('/wholesaler/products', retailerController_1.getWholesalerProducts);
+// Wholesaler Discovery & Link Request Routes
+router.get('/wholesalers/available', retailerController_1.getAvailableWholesalers);
+router.post('/wholesalers/link-request', retailerController_1.sendLinkRequest);
+router.get('/wholesalers/link-requests', retailerController_1.getMyLinkRequests);
+router.delete('/wholesalers/link-request/:requestId', retailerController_1.cancelLinkRequest);
+// Customer Link Request Management Routes (Retailer manages customer requests)
+router.get('/customer-link-requests', retailerController_1.getCustomerLinkRequests);
+router.post('/customer-link-requests/:requestId/approve', retailerController_1.approveCustomerLinkRequest);
+router.post('/customer-link-requests/:requestId/reject', retailerController_1.rejectCustomerLinkRequest);
+router.get('/linked-customers', retailerController_1.getLinkedCustomers);
+router.delete('/linked-customers/:customerId', retailerController_1.unlinkCustomer);
+// Settlement Invoices (Read-only - Admin assigns these)
+router.get('/settlement-invoices', retailerController_1.getSettlementInvoices);
+router.get('/settlement-invoices/:id', retailerController_1.getSettlementInvoice);
 exports.default = router;

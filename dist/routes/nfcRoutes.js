@@ -13,4 +13,5 @@ router.put('/cards/:id/pin', nfcController_1.setCardPin);
 router.put('/cards/:id/primary', nfcController_1.setPrimaryCard);
 router.put('/cards/:id/nickname', nfcController_1.updateCardNickname);
 router.get('/cards/:cardId/orders', nfcController_1.getCardOrders);
+router.post('/cards/:cardId/topup', nfcController_1.topUpCard);
 exports.default = router;

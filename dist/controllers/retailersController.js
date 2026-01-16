@@ -17,7 +17,8 @@ const prisma_1 = __importDefault(require("../utils/prisma"));
 // ============================================
 // RETAILERS MANAGEMENT
 // ============================================
-// Get all retailers
+// Get all retailers linked to this wholesaler
+// Uses BOTH linking methods for consistency with /linked-retailers API
 const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
@@ -28,29 +29,51 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         if (!wholesalerProfile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
-        // Get all retailers who have placed orders with this wholesaler
-        const orders = yield prisma_1.default.order.findMany({
-            where: { wholesalerId: wholesalerProfile.id },
+        // Get ALL linked retailers using BOTH methods:
+        // 1. Via LinkRequest table (new method) - status = 'approved'
+        // 2. Via linkedWholesalerId field (old method) - for backwards compatibility
+        // Method 1: Get retailers from approved LinkRequest entries
+        const approvedRequests = yield prisma_1.default.linkRequest.findMany({
+            where: {
+                wholesalerId: wholesalerProfile.id,
+                status: 'approved'
+            },
             include: {
-                retailerProfile: {
+                retailer: {
                     include: {
                         user: true,
-                        credit: true
+                        credit: true,
+                        orders: {
+                            where: { wholesalerId: wholesalerProfile.id }
+                        }
                     }
                 }
-            },
-            distinct: ['retailerId']
-        });
-        // Extract unique retailers
-        const retailersMap = new Map();
-        for (const order of orders) {
-            if (!retailersMap.has(order.retailerId)) {
-                retailersMap.set(order.retailerId, order.retailerProfile);
             }
-        }
-        const retailers = Array.from(retailersMap.values());
-        console.log(`✅ Found ${retailers.length} retailers`);
-        res.json({ retailers, count: retailers.length });
+        });
+        // Method 2: Get retailers with linkedWholesalerId set (old method)
+        const directlyLinkedRetailers = yield prisma_1.default.retailerProfile.findMany({
+            where: {
+                linkedWholesalerId: wholesalerProfile.id
+            },
+            include: {
+                user: true,
+                credit: true,
+                orders: {
+                    where: { wholesalerId: wholesalerProfile.id }
+                }
+            }
+        });
+        // Combine both lists and remove duplicates
+        const retailerIdsFromRequests = new Set(approvedRequests.map(req => req.retailer.id));
+        // Format retailers from LinkRequest
+        const retailersFromRequests = approvedRequests.map(req => (Object.assign(Object.assign({}, req.retailer), { totalOrders: req.retailer.orders.length, totalRevenue: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0), linkMethod: 'request' })));
+        // Format retailers from direct link (exclude duplicates)
+        const retailersFromDirect = directlyLinkedRetailers
+            .filter(r => !retailerIdsFromRequests.has(r.id))
+            .map(r => (Object.assign(Object.assign({}, r), { totalOrders: r.orders.length, totalRevenue: r.orders.reduce((sum, o) => sum + o.totalAmount, 0), linkMethod: 'direct' })));
+        const allRetailers = [...retailersFromRequests, ...retailersFromDirect];
+        console.log(`✅ Found ${allRetailers.length} retailers (${approvedRequests.length} from LinkRequest, ${directlyLinkedRetailers.length} from direct link)`);
+        res.json({ retailers: allRetailers, count: allRetailers.length });
     }
     catch (error) {
         console.error('❌ Error fetching retailers:', error);
@@ -59,6 +82,7 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 });
 exports.getRetailers = getRetailers;
 // Get retailer stats
+// Uses BOTH linking methods for consistency with /linked-retailers and /retailers APIs
 const getRetailerStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
@@ -67,23 +91,45 @@ const getRetailerStats = (req, res) => __awaiter(void 0, void 0, void 0, functio
         if (!wholesalerProfile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
-        // Get all orders to find unique retailers
-        const orders = yield prisma_1.default.order.findMany({
-            where: { wholesalerId: wholesalerProfile.id },
-            include: { retailerProfile: true }
+        // Get ALL linked retailers using BOTH methods:
+        // 1. Via LinkRequest table (new method) - status = 'approved'
+        // 2. Via linkedWholesalerId field (old method) - for backwards compatibility
+        const [approvedRequests, directlyLinkedRetailers] = yield Promise.all([
+            prisma_1.default.linkRequest.findMany({
+                where: {
+                    wholesalerId: wholesalerProfile.id,
+                    status: 'approved'
+                },
+                select: { retailerId: true }
+            }),
+            prisma_1.default.retailerProfile.findMany({
+                where: {
+                    linkedWholesalerId: wholesalerProfile.id
+                },
+                select: { id: true }
+            })
+        ]);
+        // Combine and deduplicate
+        const retailerIdsFromRequests = new Set(approvedRequests.map(r => r.retailerId));
+        const allLinkedRetailerIds = new Set([
+            ...retailerIdsFromRequests,
+            ...directlyLinkedRetailers.map(r => r.id)
+        ]);
+        const totalRetailers = allLinkedRetailerIds.size;
+        // Get retailers with orders (active retailers)
+        const retailersWithOrders = yield prisma_1.default.order.findMany({
+            where: {
+                wholesalerId: wholesalerProfile.id,
+                retailerId: { in: Array.from(allLinkedRetailerIds) }
+            },
+            distinct: ['retailerId'],
+            select: { retailerId: true }
         });
-        const uniqueRetailers = new Set(orders.map(o => o.retailerId));
-        const totalRetailers = uniqueRetailers.size;
-        // Get credit data
+        const activeRetailers = retailersWithOrders.length;
+        // Get credit data for linked retailers
         const creditData = yield prisma_1.default.retailerCredit.findMany({
             where: {
-                retailerProfile: {
-                    orders: {
-                        some: {
-                            wholesalerId: wholesalerProfile.id
-                        }
-                    }
-                }
+                retailerId: { in: Array.from(allLinkedRetailerIds) }
             }
         });
         const totalCreditExtended = creditData.reduce((sum, c) => sum + c.creditLimit, 0);
@@ -93,7 +139,7 @@ const getRetailerStats = (req, res) => __awaiter(void 0, void 0, void 0, functio
             : 0;
         res.json({
             total_retailers: totalRetailers,
-            active_retailers: totalRetailers, // All are active if they have orders
+            active_retailers: activeRetailers,
             credit_extended: totalCreditExtended,
             credit_utilization_percentage: creditUtilization
         });
@@ -117,7 +163,7 @@ const getRetailerById = (req, res) => __awaiter(void 0, void 0, void 0, function
         }
         // Get retailer with all details
         const retailer = yield prisma_1.default.retailerProfile.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: {
                 user: true,
                 credit: true,
@@ -132,7 +178,7 @@ const getRetailerById = (req, res) => __awaiter(void 0, void 0, void 0, function
         // Calculate total revenue from orders with this wholesaler
         const orders = yield prisma_1.default.order.findMany({
             where: {
-                retailerId: id,
+                retailerId: Number(id),
                 wholesalerId: wholesalerProfile.id
             }
         });
@@ -160,7 +206,7 @@ const getRetailerOrdersById = (req, res) => __awaiter(void 0, void 0, void 0, fu
         }
         const orders = yield prisma_1.default.order.findMany({
             where: {
-                retailerId: id,
+                retailerId: Number(id),
                 wholesalerId: wholesalerProfile.id
             },
             include: {
@@ -174,7 +220,7 @@ const getRetailerOrdersById = (req, res) => __awaiter(void 0, void 0, void 0, fu
         // Transform to match frontend expectations
         const transformedOrders = orders.map(order => ({
             id: order.id,
-            orderNumber: `ORD-${order.id.substring(0, 8).toUpperCase()}`,
+            orderNumber: `ORD-${order.id.toString().substring(0, 8).toUpperCase()}`,
             totalAmount: order.totalAmount,
             status: order.status,
             paymentType: 'credit', // Default, can be enhanced
@@ -217,7 +263,7 @@ const getSupplierOrders = (req, res) => __awaiter(void 0, void 0, void 0, functi
         const orders = payments.map(payment => ({
             id: payment.id,
             supplierName: payment.supplier.name,
-            invoiceNumber: payment.reference || `PAY-${payment.id.substring(0, 8)}`,
+            invoiceNumber: payment.reference || `PAY-${payment.id.toString().substring(0, 8)}`,
             totalAmount: payment.amount,
             paymentStatus: payment.status,
             itemsCount: 0, // Not tracked in current schema
@@ -351,7 +397,7 @@ const approveCreditRequest = (req, res) => __awaiter(void 0, void 0, void 0, fun
     try {
         const { id } = req.params;
         const creditRequest = yield prisma_1.default.creditRequest.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 status: 'approved',
                 reviewedAt: new Date()
@@ -386,7 +432,7 @@ const rejectCreditRequest = (req, res) => __awaiter(void 0, void 0, void 0, func
         const { id } = req.params;
         const { reason } = req.body;
         const creditRequest = yield prisma_1.default.creditRequest.update({
-            where: { id },
+            where: { id: Number(id) },
             data: {
                 status: 'rejected',
                 reviewedAt: new Date(),
@@ -423,7 +469,7 @@ const updateRetailerCreditLimit = (req, res) => __awaiter(void 0, void 0, void 0
         }
         // Get existing credit record
         const existingCredit = yield prisma_1.default.retailerCredit.findUnique({
-            where: { retailerId: id }
+            where: { retailerId: Number(id) }
         });
         let credit;
         if (existingCredit) {
@@ -431,7 +477,7 @@ const updateRetailerCreditLimit = (req, res) => __awaiter(void 0, void 0, void 0
             const limitDifference = newLimit - existingCredit.creditLimit;
             const newAvailableCredit = existingCredit.availableCredit + limitDifference;
             credit = yield prisma_1.default.retailerCredit.update({
-                where: { retailerId: id },
+                where: { retailerId: Number(id) },
                 data: {
                     creditLimit: newLimit,
                     availableCredit: newAvailableCredit
@@ -442,7 +488,7 @@ const updateRetailerCreditLimit = (req, res) => __awaiter(void 0, void 0, void 0
             // Create new credit record
             credit = yield prisma_1.default.retailerCredit.create({
                 data: {
-                    retailerId: id,
+                    retailerId: Number(id),
                     creditLimit: newLimit,
                     availableCredit: newLimit,
                     usedCredit: 0

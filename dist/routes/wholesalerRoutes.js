@@ -22,9 +22,17 @@ router.put('/inventory/:id/price', wholesalerController_1.updatePrice);
 router.delete('/inventory/:id', wholesalerController_1.deleteProduct);
 // Orders
 router.get('/retailer-orders', wholesalerController_1.getRetailerOrders);
-router.get('/retailer-orders/stats', wholesalerController_1.getRetailerOrders);
+router.get('/retailer-orders/stats', wholesalerController_1.getOrderStats);
 router.get('/retailer-orders/:id', wholesalerController_1.getOrder);
 router.put('/retailer-orders/:id/status', wholesalerController_1.updateOrderStatus);
+router.post('/retailer-orders/:id/confirm', wholesalerController_1.confirmOrder);
+router.post('/retailer-orders/:id/reject', wholesalerController_1.rejectOrder);
+router.post('/retailer-orders/:id/ship', wholesalerController_1.shipOrder);
+router.post('/retailer-orders/:id/deliver', wholesalerController_1.confirmDelivery);
+// Credit Management (Wholesaler specific)
+router.get('/credit-requests', wholesalerController_1.getCreditRequests);
+router.post('/credit-requests/:id/approve', retailersController_1.approveCreditRequest);
+router.post('/credit-requests/:id/reject', retailersController_1.rejectCreditRequest);
 // Retailers
 router.get('/retailers', retailersController_1.getRetailers);
 router.get('/retailers/stats', retailersController_1.getRetailerStats);
@@ -53,4 +61,13 @@ router.put('/settings', profileController_1.updateWholesalerSettings);
 router.get('/credit-requests', retailersController_1.getCreditRequestsWithStats);
 router.post('/credit-requests/:id/approve', retailersController_1.approveCreditRequest);
 router.post('/credit-requests/:id/reject', retailersController_1.rejectCreditRequest);
+// Link Request Management (Retailer-Wholesaler Linking)
+router.get('/link-requests', wholesalerController_1.getLinkRequests);
+router.post('/link-requests/:requestId/approve', wholesalerController_1.approveLinkRequest);
+router.post('/link-requests/:requestId/reject', wholesalerController_1.rejectLinkRequest);
+router.get('/linked-retailers', wholesalerController_1.getLinkedRetailers);
+router.delete('/linked-retailers/:retailerId', wholesalerController_1.unlinkRetailer);
+// Settlement Invoices (Read-only - Admin assigns these)
+router.get('/settlement-invoices', wholesalerController_1.getSettlementInvoices);
+router.get('/settlement-invoices/:id', wholesalerController_1.getSettlementInvoice);
 exports.default = router;

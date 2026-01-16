@@ -37,18 +37,20 @@ exports.getSuppliers = getSuppliers;
 const createSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
     try {
-        const { name, contactPerson, phone, email, address } = req.body;
+        const { name, contactPerson, contact_person, phone, email, address } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'Supplier name is required' });
+        }
         // Get wholesaler ID from authenticated user
         if (!((_b = (_a = req.user) === null || _a === void 0 ? void 0 : _a.wholesalerProfile) === null || _b === void 0 ? void 0 : _b.id)) {
             return res.status(403).json({ error: 'Only wholesalers can create suppliers' });
         }
         const wholesalerId = req.user.wholesalerProfile.id;
-        // Check existing
         const existing = yield prisma_1.default.supplier.findFirst({
             where: {
                 OR: [
-                    { name },
-                    { email: email || undefined } // Only check email if provided
+                    { name: name },
+                    ...(email ? [{ email: email }] : [])
                 ]
             }
         });
@@ -57,7 +59,7 @@ const createSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         const supplierData = {
             name,
-            contactPerson,
+            contactPerson: contactPerson || contact_person,
             phone,
             email,
             address,
@@ -79,17 +81,21 @@ exports.createSupplier = createSupplier;
 const updateSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const { name, contactPerson, phone, email, address, status } = req.body;
+        console.log('Update Supplier params:', req.params);
+        console.log('Update Supplier body:', req.body);
+        const { name, contactPerson, contact_person, phone, email, address, status } = req.body;
+        const updateData = {
+            name,
+            contactPerson: contactPerson || contact_person,
+            phone,
+            email,
+            address,
+            status
+        };
+        console.log('Prisma Update Data:', updateData);
         const supplier = yield prisma_1.default.supplier.update({
-            where: { id },
-            data: {
-                name,
-                contactPerson,
-                phone,
-                email,
-                address,
-                status
-            }
+            where: { id: Number(id) },
+            data: updateData
         });
         res.json({ success: true, message: 'Supplier updated successfully', supplier });
     }
@@ -105,14 +111,14 @@ const deleteSupplier = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const { id } = req.params;
         // Check if supplier has products linked
         const supplier = yield prisma_1.default.supplier.findUnique({
-            where: { id },
+            where: { id: Number(id) },
             include: { _count: { select: { products: true } } }
         });
         if (supplier && supplier._count.products > 0) {
             return res.status(400).json({ error: 'Cannot delete supplier with linked products. Deactivate instead.' });
         }
         yield prisma_1.default.supplier.delete({
-            where: { id }
+            where: { id: Number(id) }
         });
         res.json({ success: true, message: 'Supplier deleted successfully' });
     }

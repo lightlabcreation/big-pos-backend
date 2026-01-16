@@ -71,7 +71,7 @@ const updateJob = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         if (data.salaryMax)
             data.salaryMax = Number(data.salaryMax);
         const job = yield prisma_1.default.jobPosting.update({
-            where: { id },
+            where: { id: Number(id) },
             data
         });
         res.json({ success: true, message: 'Job updated', job });
@@ -85,7 +85,7 @@ exports.updateJob = updateJob;
 const deleteJob = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        yield prisma_1.default.jobPosting.delete({ where: { id } });
+        yield prisma_1.default.jobPosting.delete({ where: { id: Number(id) } });
         res.json({ success: true, message: 'Job deleted' });
     }
     catch (error) {
@@ -145,7 +145,7 @@ const updateApplicationStatus = (req, res) => __awaiter(void 0, void 0, void 0, 
         const { id } = req.params;
         const { status } = req.body;
         const application = yield prisma_1.default.jobApplication.update({
-            where: { id },
+            where: { id: Number(id) },
             data: { status }
         });
         res.json({ success: true, message: 'Status updated', application });

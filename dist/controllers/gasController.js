@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOrderDetails = exports.getCustomerOrders = exports.getGasRewardsLeaderboard = exports.getGasRewardsHistory = exports.getGasRewardsBalance = exports.getGasUsage = exports.topupGas = exports.removeGasMeter = exports.addGasMeter = exports.getGasMeters = void 0;
+exports.getOrderDetails = exports.getCustomerOrders = exports.getGasRewardsLeaderboard = exports.getGasRewardsHistory = exports.getGasRewardsBalance = exports.recordGasUsage = exports.getGasUsage = exports.topupGas = exports.removeGasMeter = exports.addGasMeter = exports.getGasMeters = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get gas meters
 const getGasMeters = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -29,19 +29,26 @@ const getGasMeters = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 consumerId: consumerProfile.id,
                 status: { not: 'removed' }
             },
+            include: {
+                gasTopups: true
+            },
             orderBy: { createdAt: 'desc' }
         });
         res.json({
             success: true,
-            data: meters.map(m => ({
-                id: m.id,
-                meter_number: m.meterNumber,
-                alias_name: m.aliasName,
-                owner_name: m.ownerName,
-                owner_phone: m.ownerPhone,
-                status: m.status,
-                created_at: m.createdAt
-            }))
+            data: meters.map(m => {
+                const totalUnits = m.gasTopups.reduce((sum, t) => sum + t.units, 0);
+                return {
+                    id: m.id,
+                    meter_number: m.meterNumber,
+                    alias_name: m.aliasName,
+                    owner_name: m.ownerName,
+                    owner_phone: m.ownerPhone,
+                    status: m.status,
+                    current_units: totalUnits, // Dynamic calculation
+                    created_at: m.createdAt
+                };
+            })
         });
     }
     catch (error) {
@@ -112,14 +119,14 @@ const removeGasMeter = (req, res) => __awaiter(void 0, void 0, void 0, function*
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
         const meter = yield prisma_1.default.gasMeter.findUnique({
-            where: { id }
+            where: { id: Number(id) }
         });
         if (!meter || meter.consumerId !== consumerProfile.id) {
             return res.status(404).json({ success: false, error: 'Gas meter not found' });
         }
         // Soft delete
         yield prisma_1.default.gasMeter.update({
-            where: { id },
+            where: { id: Number(id) },
             data: { status: 'removed' }
         });
         res.json({
@@ -157,68 +164,107 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         if (!meter) {
             return res.status(404).json({ success: false, error: 'Gas meter not found' });
         }
-        // Get dashboard wallet
-        const wallet = yield prisma_1.default.wallet.findFirst({
-            where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
-        });
-        if (!wallet || wallet.balance < amount) {
-            return res.status(400).json({ success: false, error: 'Insufficient wallet balance' });
-        }
-        // Calculate units (assuming 1000 RWF = 1.1 m3)
-        const units = (amount / 1000) * 1.1;
-        // Create topup record
-        const topup = yield prisma_1.default.gasTopup.create({
-            data: {
-                consumerId: consumerProfile.id,
-                meterId: meter.id,
-                amount,
-                units,
-                currency: 'RWF',
-                status: 'completed'
+        // Calculate units based on realistic market rate (1,500 RWF = 1 kg)
+        // 1 RWF ≈ 0.00067 kg
+        const units = amount / 1500;
+        const result = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+            // Create topup record
+            const topup = yield tx.gasTopup.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    meterId: meter.id,
+                    amount,
+                    units,
+                    currency: 'RWF',
+                    status: 'completed'
+                }
+            });
+            // Create customer order
+            const order = yield tx.customerOrder.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    orderType: 'gas',
+                    status: 'completed',
+                    amount,
+                    currency: 'RWF',
+                    items: JSON.stringify([{
+                            meterNumber: meter_number,
+                            units,
+                            amount
+                        }]),
+                    metadata: JSON.stringify({ paymentMethod: payment_method || 'wallet' })
+                }
+            });
+            // Check balance and deduct based on payment method
+            let newBalance = 0;
+            if (payment_method === 'wallet' || !payment_method) {
+                const wallet = yield tx.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+                });
+                if (!wallet || wallet.balance < amount) {
+                    throw new Error('Insufficient wallet balance');
+                }
+                // Deduct from wallet
+                const updatedWallet = yield tx.wallet.update({
+                    where: { id: wallet.id },
+                    data: { balance: { decrement: amount } }
+                });
+                newBalance = updatedWallet.balance;
+                // Create wallet transaction
+                yield tx.walletTransaction.create({
+                    data: {
+                        walletId: wallet.id,
+                        type: 'gas_purchase',
+                        amount,
+                        description: `Gas topup for meter ${meter_number}`,
+                        reference: order.id.toString(),
+                        status: 'completed'
+                    }
+                });
             }
-        });
-        // Create customer order
-        const order = yield prisma_1.default.customerOrder.create({
-            data: {
-                consumerId: consumerProfile.id,
-                orderType: 'gas',
-                status: 'completed',
-                amount,
-                currency: 'RWF',
-                items: JSON.stringify([{
-                        meterNumber: meter_number,
-                        units,
-                        amount
-                    }]),
-                metadata: JSON.stringify({ paymentMethod: payment_method || 'wallet' })
+            else if (payment_method === 'nfc_card') {
+                const { card_id } = req.body;
+                if (!card_id)
+                    throw new Error('Card ID is required for NFC payment');
+                const card = yield tx.nfcCard.findFirst({
+                    where: { id: Number(card_id), consumerId: consumerProfile.id }
+                });
+                if (!card)
+                    throw new Error('NFC Card not found');
+                if (card.balance < amount) {
+                    throw new Error('Insufficient NFC card balance');
+                }
+                // Deduct from card
+                yield tx.nfcCard.update({
+                    where: { id: card.id },
+                    data: { balance: { decrement: amount } }
+                });
+                // Get current wallet balance for response
+                const wallet = yield tx.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+                });
+                newBalance = (wallet === null || wallet === void 0 ? void 0 : wallet.balance) || 0;
             }
-        });
-        // Deduct from wallet
-        yield prisma_1.default.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: { decrement: amount } }
-        });
-        // Create wallet transaction
-        yield prisma_1.default.walletTransaction.create({
-            data: {
-                walletId: wallet.id,
-                type: 'debit',
-                amount,
-                description: `Gas topup for meter ${meter_number}`,
-                reference: order.id,
-                status: 'completed'
+            else if (payment_method === 'mobile_money') {
+                // Simulated Success
+                const wallet = yield tx.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+                });
+                newBalance = (wallet === null || wallet === void 0 ? void 0 : wallet.balance) || 0;
             }
-        });
-        // Award gas rewards (10% of units)
-        const rewardUnits = units * 0.1;
-        yield prisma_1.default.gasReward.create({
-            data: {
-                consumerId: consumerProfile.id,
-                units: rewardUnits,
-                source: 'purchase',
-                reference: order.id
-            }
-        });
+            // Award gas rewards (10% of units)
+            const rewardUnits = units * 0.1;
+            yield tx.gasReward.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    units: rewardUnits,
+                    source: 'purchase',
+                    reference: order.id.toString()
+                }
+            });
+            return { topup, order, newBalance, rewardUnits };
+        }));
+        const { topup, order, newBalance, rewardUnits } = result;
         // Generate gas meter token (16 digits formatted as XXXX-XXXX-XXXX-XXXX)
         const generateToken = () => {
             var _a;
@@ -236,7 +282,7 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 units,
                 token,
                 reward_units: rewardUnits,
-                new_wallet_balance: wallet.balance - amount
+                new_wallet_balance: newBalance
             },
             message: 'Gas topup successful'
         });
@@ -294,6 +340,59 @@ const getGasUsage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     }
 });
 exports.getGasUsage = getGasUsage;
+// Record gas usage (Simulated)
+const recordGasUsage = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userId = req.user.id;
+        const { meter_number, units_used, activity } = req.body;
+        if (!meter_number || !units_used || units_used <= 0) {
+            return res.status(400).json({ success: false, error: 'Invalid usage data' });
+        }
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Customer profile not found' });
+        }
+        const meter = yield prisma_1.default.gasMeter.findFirst({
+            where: {
+                meterNumber: meter_number,
+                consumerId: consumerProfile.id,
+                status: 'active'
+            }
+        });
+        if (!meter) {
+            return res.status(404).json({ success: false, error: 'Gas meter not found' });
+        }
+        // Create a negative topup record to represent consumption
+        // This avoids schema changes while maintaining accurate dynamic balance
+        const usage = yield prisma_1.default.gasTopup.create({
+            data: {
+                consumerId: consumerProfile.id,
+                meterId: meter.id,
+                amount: 0,
+                units: -units_used, // Negative units subtract from total
+                currency: 'RWF',
+                status: 'consumed',
+                orderId: activity || 'Cooking Session'
+            }
+        });
+        res.json({
+            success: true,
+            data: {
+                usage_id: usage.id,
+                units_used,
+                meter_number
+            },
+            message: 'Gas usage recorded successfully'
+        });
+    }
+    catch (error) {
+        console.error('Record gas usage error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.recordGasUsage = recordGasUsage;
 // Get gas rewards balance
 const getGasRewardsBalance = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -469,7 +568,7 @@ const getOrderDetails = (req, res) => __awaiter(void 0, void 0, void 0, function
         }
         const order = yield prisma_1.default.customerOrder.findFirst({
             where: {
-                id,
+                id: Number(id),
                 consumerId: consumerProfile.id
             }
         });
