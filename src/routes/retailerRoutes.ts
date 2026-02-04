@@ -41,7 +41,10 @@ import {
   unlinkCustomer,
   // Settlement Invoices (Read-only)
   getSettlementInvoices,
-  getSettlementInvoice
+  getSettlementInvoice,
+  // Purchase History (Wholesale Orders)
+  getPurchaseOrders,
+  getPurchaseOrder
 } from '../controllers/retailerController';
 import { authenticate } from '../middleware/authMiddleware';
 
@@ -87,6 +90,8 @@ router.get('/pos/daily-sales', getDailySales);
 
 // Wholesaler Products (for Add Stock)
 router.get('/wholesaler/products', getWholesalerProducts);
+router.get('/wholesaler/orders', getPurchaseOrders);
+router.get('/wholesaler/orders/:id', getPurchaseOrder);
 
 // Wholesaler Discovery & Link Request Routes
 router.get('/wholesalers/available', getAvailableWholesalers);

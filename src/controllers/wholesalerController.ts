@@ -780,16 +780,44 @@ export const confirmOrder = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, error: `Cannot confirm order with status: ${order.status}` });
     }
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: Number(id) },
-      data: { status: 'confirmed' },
-      include: {
-        orderItems: { include: { product: true } },
-        retailerProfile: { include: { user: true } }
-      }
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Get order items with product info
+      const orderWithItems = await tx.order.findUnique({
+        where: { id: Number(id) },
+        include: { orderItems: { include: { product: true } } }
+      });
 
-    res.json({ success: true, order: updatedOrder, message: 'Order confirmed successfully' });
+      if (!orderWithItems) throw new Error('Order not found');
+
+      // 2. Check and decrement stock for each item
+      for (const item of orderWithItems.orderItems) {
+        if (!item.product) throw new Error(`Product not found for item ${item.productId}`);
+        
+        if (item.product.stock < item.quantity) {
+          throw new Error(`Insufficient stock for product: ${item.product.name}. Available: ${item.product.stock}, Required: ${item.quantity}`);
+        }
+
+        // Decrement wholesaler's stock
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { decrement: item.quantity } }
+        });
+      }
+
+      // 3. Update order status
+      const updatedOrder = await tx.order.update({
+        where: { id: Number(id) },
+        data: { status: 'confirmed' },
+        include: {
+          orderItems: { include: { product: true } },
+          retailerProfile: { include: { user: true } }
+        }
+      });
+
+      return updatedOrder;
+    }, { timeout: 15000 });
+
+    res.json({ success: true, order: result, message: 'Order confirmed and stock deducted successfully' });
   } catch (error: any) {
     console.error('Error confirming order:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -917,16 +945,64 @@ export const confirmDelivery = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, error: `Cannot confirm delivery for order with status: ${order.status}. Order must be shipped first.` });
     }
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: Number(id) },
-      data: { status: 'delivered' },
-      include: {
-        orderItems: { include: { product: true } },
-        retailerProfile: { include: { user: true } }
-      }
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Update order status
+      const updatedOrder = await tx.order.update({
+        where: { id: Number(id) },
+        data: { status: 'delivered' },
+        include: {
+          orderItems: { include: { product: true } },
+          retailerProfile: true
+        }
+      });
 
-    res.json({ success: true, order: updatedOrder, message: 'Delivery confirmed successfully' });
+      // 2. Update Retailer's Inventory
+      for (const item of updatedOrder.orderItems) {
+        if (!item.product) continue;
+
+        // Search for existing product in retailer's inventory
+        // Priority: Barcode > SKU > Name
+        const existingProduct = await tx.product.findFirst({
+          where: {
+            retailerId: updatedOrder.retailerId,
+            OR: [
+              item.product.barcode ? { barcode: item.product.barcode } : { id: -1 },
+              item.product.sku ? { sku: item.product.sku } : { id: -1 },
+              { name: item.product.name }
+            ]
+          }
+        });
+
+        if (existingProduct) {
+          // Update existing stock
+          await tx.product.update({
+            where: { id: existingProduct.id },
+            data: { stock: { increment: item.quantity } }
+          });
+        } else {
+          // Create new product for retailer based on wholesaler's product
+          await tx.product.create({
+            data: {
+              name: item.product.name,
+              description: item.product.description,
+              sku: item.product.sku,
+              barcode: item.product.barcode,
+              category: item.product.category,
+              price: item.product.price * 1.2, // Default 20% markup for retailer if new
+              costPrice: item.product.price,    // Wholesaler's price is retailer's cost
+              stock: item.quantity,
+              retailerId: updatedOrder.retailerId,
+              unit: item.product.unit,
+              status: 'active'
+            }
+          });
+        }
+      }
+
+      return updatedOrder;
+    }, { timeout: 15000 });
+
+    res.json({ success: true, order: result, message: 'Delivery confirmed and retailer stock updated' });
   } catch (error: any) {
     console.error('Error confirming delivery:', error);
     res.status(500).json({ success: false, error: error.message });

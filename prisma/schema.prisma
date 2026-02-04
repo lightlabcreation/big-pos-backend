@@ -135,6 +135,7 @@ model Order {
   retailerId        Int
   wholesalerId      Int
   status            String
+  paymentMethod     String            @default("wallet")
   totalAmount       Float
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt

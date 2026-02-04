@@ -250,6 +250,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   }
 };
 
+
 // Get inventory (Retailer's products + Wholesaler Catalog)
 export const getInventory = async (req: AuthRequest, res: Response) => {
   try {
@@ -664,12 +665,9 @@ export const getPOSProducts = async (req: AuthRequest, res: Response) => {
     const { search, limit = '50', offset = '0' } = req.query;
 
     const where: any = {
-      OR: [
-        { retailerId: retailerProfile.id },
-        { retailerId: null } // Include global/seeded products
-      ],
-      status: 'active', // Only active products
-      // stock: { gt: 0 }  <-- Removed to show all inventory including out of stock
+      retailerId: retailerProfile.id, // Only show products belonging to this retailer
+      status: 'active',
+      stock: { gt: 0 } // Only show products with stock available
     };
 
     if (search) {
@@ -1230,7 +1228,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { items, totalAmount } = req.body;
+    const { items, totalAmount, paymentMethod = 'wallet' } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Order must contain items' });
@@ -1266,28 +1264,48 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Transaction: Create Order, Debit Wallet, Link Retailer to Wholesaler (if first order)
+    // Transaction: Create Order, Debit Wallet/Credit, and Link Retailer
     const result = await prisma.$transaction(async (prisma) => {
-      // 1. Check Wallet
-      if (retailerProfile.walletBalance < totalAmount) {
-        throw new Error('Insufficient wallet balance');
-      }
-
-      // 2. Auto-link retailer to wholesaler on FIRST order (if not already linked)
-      if (!retailerProfile.linkedWholesalerId) {
+      // 1. Payment Processing Logic
+      if (paymentMethod === 'wallet') {
+        if (retailerProfile.walletBalance < totalAmount) {
+          throw new Error('Insufficient wallet balance');
+        }
+        // Debit Wallet
         await prisma.retailerProfile.update({
           where: { id: retailerProfile.id },
-          data: { linkedWholesalerId: wholesalerId }
+          data: { walletBalance: { decrement: totalAmount } }
         });
+      } else if (paymentMethod === 'credit') {
+        const credit = await prisma.retailerCredit.findUnique({
+          where: { retailerId: retailerProfile.id }
+        });
+        if (!credit || credit.availableCredit < totalAmount) {
+          throw new Error('Insufficient credit limit available');
+        }
+        // Update Credit Usage
+        await prisma.retailerCredit.update({
+          where: { id: credit.id },
+          data: {
+            availableCredit: { decrement: totalAmount },
+            usedCredit: { increment: totalAmount }
+          }
+        });
+      } else if (paymentMethod === 'momo') {
+        // Mobile Money logic (Mock: mark as pending payment)
+        // No immediate balance deduction
+      } else {
+        throw new Error('Invalid payment method');
       }
 
-      // 3. Create Order
+      // 2. Create Order
       const order = await prisma.order.create({
         data: {
           retailerId: retailerProfile.id,
           wholesalerId: wholesalerId,
           totalAmount: totalAmount,
-          status: 'pending',
+          paymentMethod: paymentMethod,
+          status: paymentMethod === 'momo' ? 'pending_payment' : 'pending',
           orderItems: {
             create: items.map((item: any) => ({
               productId: item.product_id,
@@ -1298,14 +1316,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         }
       });
 
-      // 4. Debit Wallet
-      await prisma.retailerProfile.update({
-        where: { id: retailerProfile.id },
-        data: { walletBalance: { decrement: totalAmount } }
-      });
-
       return order;
-    });
+    }, { timeout: 15000 });
 
     res.json({ success: true, order: result });
   } catch (error: any) {
@@ -2524,5 +2536,116 @@ export const getSettlementInvoice = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('Get Settlement Invoice Error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get Retailer Purchase Orders (Wholesale Orders)
+export const getPurchaseOrders = async (req: AuthRequest, res: Response) => {
+  try {
+    const { status, limit = 10, offset = 0 } = req.query;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
+    const where: any = { retailerId: retailerProfile.id };
+    if (status) where.status = status;
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        include: {
+          wholesalerProfile: true,
+          orderItems: {
+            include: {
+              product: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: Number(limit),
+        skip: Number(offset)
+      }),
+      prisma.order.count({ where })
+    ]);
+
+    const formattedOrders = orders.map(order => ({
+      id: order.id,
+      wholesaler_name: order.wholesalerProfile?.companyName || 'Unknown Wholesaler',
+      total_amount: order.totalAmount,
+      status: order.status,
+      payment_method: order.paymentMethod,
+      created_at: order.createdAt,
+      items_count: order.orderItems.length
+    }));
+
+    res.json({ 
+      orders: formattedOrders, 
+      total,
+      limit: Number(limit),
+      offset: Number(offset)
+    });
+  } catch (error: any) {
+    console.error('❌ Error fetching purchase orders:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Get Single Purchase Order Detail
+export const getPurchaseOrder = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const retailerProfile = await prisma.retailerProfile.findUnique({
+      where: { userId: req.user!.id }
+    });
+
+    if (!retailerProfile) {
+      return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: {
+        id: Number(id),
+        retailerId: retailerProfile.id
+      },
+      include: {
+        wholesalerProfile: true,
+        orderItems: {
+          include: {
+            product: true
+          }
+        }
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const formattedOrder = {
+      id: order.id,
+      wholesaler_name: order.wholesalerProfile?.companyName || 'Unknown Wholesaler',
+      total_amount: order.totalAmount,
+      status: order.status,
+      payment_method: order.paymentMethod,
+      created_at: order.createdAt,
+      items: order.orderItems.map(item => ({
+        id: item.id,
+        product_name: item.product?.name || 'Unknown Product',
+        quantity: item.quantity,
+        price: item.price,
+        total: item.quantity * item.price
+      }))
+    };
+
+    res.json({ order: formattedOrder });
+  } catch (error: any) {
+    console.error('❌ Error fetching purchase order detail:', error);
+    res.status(500).json({ error: error.message });
   }
 };
