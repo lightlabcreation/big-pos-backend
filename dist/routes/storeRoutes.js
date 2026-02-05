@@ -7,7 +7,7 @@ const gasController_1 = require("../controllers/gasController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = (0, express_1.Router)();
 // Public routes - Only retailers list is public (for discovery)
-router.get('/retailers', storeController_1.getRetailers);
+router.get('/retailers', authMiddleware_1.optionalAuthenticate, storeController_1.getRetailers);
 router.get('/categories', authMiddleware_1.authenticate, storeController_1.getCategories);
 // Products route - REQUIRES authentication and linking
 router.get('/products', authMiddleware_1.authenticate, storeController_1.getProducts);

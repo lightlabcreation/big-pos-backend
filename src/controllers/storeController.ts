@@ -546,7 +546,8 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
         product_name: item.product.name,
         quantity: item.quantity,
         unit_price: item.price,
-        total: item.price * item.quantity
+        total: item.price * item.quantity,
+        image: item.product.image // Include product image
       })),
       subtotal: sale.totalAmount, // Assuming no extra fees for now
       delivery_fee: 0,

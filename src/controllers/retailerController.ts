@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
+import { uploadImage } from '../utils/cloudinary';
 
 // Get dashboard stats
 // Get dashboard stats with comprehensive calculations
@@ -326,7 +327,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Retailer profile not found' });
     }
 
-    const { invoice_number, name, description, sku, category, price, costPrice, stock } = req.body;
+    const { invoice_number, name, description, sku, category, price, costPrice, stock, image } = req.body;
 
     // --- Invoice Flow ---
     if (invoice_number) {
@@ -387,6 +388,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
             unit: sourceProduct.unit,
             invoiceNumber: invoice_number,
             retailerId: retailerProfile.id,
+            image: sourceProduct.image,
             status: 'active'
           }
         });
@@ -401,6 +403,12 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Name and Price are required for manual creation' });
     }
 
+    // Upload to Cloudinary if image is provided as base64
+    let imageUrl = image;
+    if (image && image.startsWith('data:image')) {
+      imageUrl = await uploadImage(image);
+    }
+
     const product = await prisma.product.create({
       data: {
         name,
@@ -410,6 +418,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         price: parseFloat(price),
         costPrice: costPrice ? parseFloat(costPrice) : undefined,
         stock: stock ? parseInt(stock) : 0,
+        image: imageUrl,
         retailerId: retailerProfile.id
       }
     });
@@ -425,7 +434,13 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, category, price, costPrice, stock } = req.body;
+    const { name, description, category, price, costPrice, stock, image } = req.body;
+
+    // Upload to Cloudinary if new image is provided as base64
+    let imageUrl = image;
+    if (image && image.startsWith('data:image')) {
+      imageUrl = await uploadImage(image);
+    }
 
     const product = await prisma.product.update({
       where: { id: Number(id) },
@@ -435,7 +450,8 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
         category,
         price: price ? parseFloat(price) : undefined,
         costPrice: costPrice ? parseFloat(costPrice) : undefined,
-        stock: stock !== undefined ? parseInt(stock) : undefined
+        stock: stock !== undefined ? parseInt(stock) : undefined,
+        image: imageUrl
       }
     });
 
@@ -554,6 +570,7 @@ export const getOrder = async (req: AuthRequest, res: Response) => {
         product_id: item.productId,
         product_name: item.product.name,
         sku: item.product.sku,
+        image: item.product.image,
         quantity: item.quantity,
         unit_price: item.price,
         total: item.price * item.quantity
@@ -1501,7 +1518,8 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
         id: i.id,
         product_name: i.product.name,
         quantity: i.quantity,
-        price: i.price
+        price: i.price,
+        image: i.product.image
       }))
     });
 
@@ -2653,7 +2671,8 @@ export const getPurchaseOrder = async (req: AuthRequest, res: Response) => {
         product_name: item.product?.name || 'Unknown Product',
         quantity: item.quantity,
         price: item.price,
-        total: item.quantity * item.price
+        total: item.quantity * item.price,
+        image: item.product.image
       }))
     };
 

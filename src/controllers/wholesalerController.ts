@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
+import { uploadImage } from '../utils/cloudinary';
 
 // Get dashboard stats with comprehensive calculations
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
@@ -362,7 +363,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       unit,
       low_stock_threshold,
       invoice_number,
-      barcode
+      barcode,
+      image             // Base64 string from frontend
     } = req.body;
 
     // Validate required fields
@@ -427,8 +429,17 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       lowStockThreshold: parsedLowStockThreshold,
       invoiceNumber: invoice_number,
       barcode,
-      wholesalerId: wholesalerProfile.id
+      wholesalerId: wholesalerProfile.id,
+      image: image || null
     });
+
+    // Upload to Cloudinary if image is provided as base64
+    let imageUrl = image;
+    if (image && image.startsWith('data:image')) {
+      console.log('🖼️ Uploading image to Cloudinary...');
+      imageUrl = await uploadImage(image);
+      console.log('✅ Image uploaded:', imageUrl);
+    }
 
     const product = await prisma.product.create({
       data: {
@@ -443,7 +454,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         lowStockThreshold: parsedLowStockThreshold,
         invoiceNumber: invoice_number,
         barcode,
-        wholesalerId: wholesalerProfile.id
+        wholesalerId: wholesalerProfile.id,
+        image: imageUrl || null
       }
     });
 
@@ -462,7 +474,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, category, sku, unit, low_stock_threshold, invoice_number, barcode, description } = req.body;
+    const { name, category, sku, unit, low_stock_threshold, invoice_number, barcode, description, image } = req.body;
 
     const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
       where: { userId: req.user?.id }
@@ -470,6 +482,14 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 
     if (!wholesalerProfile) {
       return res.status(404).json({ error: 'Wholesaler profile not found' });
+    }
+
+    // Upload to Cloudinary if new image is provided
+    let imageUrl = image;
+    if (image && image.startsWith('data:image')) {
+      console.log('🖼️ Uploading new image to Cloudinary...');
+      imageUrl = await uploadImage(image);
+      console.log('✅ New image uploaded:', imageUrl);
     }
 
     const product = await prisma.product.update({
@@ -485,7 +505,8 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
         lowStockThreshold: low_stock_threshold ? parseInt(low_stock_threshold) : undefined,
         invoiceNumber: invoice_number,
         barcode,
-        description
+        description,
+        image: imageUrl
       }
     });
 

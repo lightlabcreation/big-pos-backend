@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
+import { uploadImage } from '../utils/cloudinary';
 import { hashPassword } from '../utils/auth';
 
 // Get detailed dashboard stats
@@ -1175,8 +1176,15 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       invoiceNumber,
       barcode,
       wholesalerId,
-      retailerId
+      retailerId,
+      image
     } = req.body;
+
+    // Upload to Cloudinary if image is provided as base64
+    let imageUrl = image;
+    if (image && image.startsWith('data:image')) {
+      imageUrl = await uploadImage(image);
+    }
 
     const product = await prisma.product.create({
       data: {
@@ -1194,6 +1202,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         barcode,
         wholesalerId,
         retailerId,
+        image: imageUrl,
         status: 'active'
       }
     });
@@ -1222,8 +1231,15 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       lowStockThreshold,
       invoiceNumber,
       barcode,
-      status
+      status,
+      image
     } = req.body;
+
+    // Upload to Cloudinary if new image is provided as base64
+    let imageUrl = image;
+    if (image && image.startsWith('data:image')) {
+      imageUrl = await uploadImage(image);
+    }
 
     const product = await prisma.product.update({
       where: { id: Number(id) },
@@ -1240,7 +1256,8 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
         lowStockThreshold: lowStockThreshold !== undefined ? (lowStockThreshold ? parseInt(lowStockThreshold) : null) : undefined,
         invoiceNumber,
         barcode,
-        status
+        status,
+        image: imageUrl
       }
     });
 

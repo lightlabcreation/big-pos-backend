@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSettlementInvoice = exports.getSettlementInvoices = exports.unlinkRetailer = exports.getLinkedRetailers = exports.rejectLinkRequest = exports.approveLinkRequest = exports.getLinkRequests = exports.rejectCreditRequest = exports.approveCreditRequest = exports.getCreditRequests = exports.confirmDelivery = exports.shipOrder = exports.rejectOrder = exports.confirmOrder = exports.getOrderStats = exports.updateOrderStatus = exports.getOrder = exports.getRetailerOrders = exports.deleteProduct = exports.updatePrice = exports.updateStock = exports.updateProduct = exports.createProduct = exports.getCategories = exports.getInventoryStats = exports.getInventory = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
+const cloudinary_1 = require("../utils/cloudinary");
 // Get dashboard stats with comprehensive calculations
 const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -307,7 +308,8 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         // Extract fields from request body (matching frontend field names)
         const { name, description, sku, category, wholesale_price, // Frontend sends wholesale_price
         cost_price, // Frontend sends cost_price
-        stock, unit, low_stock_threshold, invoice_number, barcode } = req.body;
+        stock, unit, low_stock_threshold, invoice_number, barcode, image // Base64 string from frontend
+         } = req.body;
         // Validate required fields
         if (!name || !category || !wholesale_price) {
             console.error('❌ Missing required fields');
@@ -365,8 +367,16 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             lowStockThreshold: parsedLowStockThreshold,
             invoiceNumber: invoice_number,
             barcode,
-            wholesalerId: wholesalerProfile.id
+            wholesalerId: wholesalerProfile.id,
+            image: image || null
         });
+        // Upload to Cloudinary if image is provided as base64
+        let imageUrl = image;
+        if (image && image.startsWith('data:image')) {
+            console.log('🖼️ Uploading image to Cloudinary...');
+            imageUrl = yield (0, cloudinary_1.uploadImage)(image);
+            console.log('✅ Image uploaded:', imageUrl);
+        }
         const product = yield prisma_1.default.product.create({
             data: {
                 name,
@@ -380,7 +390,8 @@ const createProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 lowStockThreshold: parsedLowStockThreshold,
                 invoiceNumber: invoice_number,
                 barcode,
-                wholesalerId: wholesalerProfile.id
+                wholesalerId: wholesalerProfile.id,
+                image: imageUrl || null
             }
         });
         console.log('✅ Product created successfully:', product.id);
@@ -400,12 +411,19 @@ const updateProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     var _a;
     try {
         const { id } = req.params;
-        const { name, category, sku, unit, low_stock_threshold, invoice_number, barcode, description } = req.body;
+        const { name, category, sku, unit, low_stock_threshold, invoice_number, barcode, description, image } = req.body;
         const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
             where: { userId: (_a = req.user) === null || _a === void 0 ? void 0 : _a.id }
         });
         if (!wholesalerProfile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        // Upload to Cloudinary if new image is provided
+        let imageUrl = image;
+        if (image && image.startsWith('data:image')) {
+            console.log('🖼️ Uploading new image to Cloudinary...');
+            imageUrl = yield (0, cloudinary_1.uploadImage)(image);
+            console.log('✅ New image uploaded:', imageUrl);
         }
         const product = yield prisma_1.default.product.update({
             where: {
@@ -420,7 +438,8 @@ const updateProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 lowStockThreshold: low_stock_threshold ? parseInt(low_stock_threshold) : undefined,
                 invoiceNumber: invoice_number,
                 barcode,
-                description
+                description,
+                image: imageUrl
             }
         });
         res.json({ success: true, product });

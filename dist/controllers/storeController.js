@@ -48,6 +48,10 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             });
         }
         // Check if customer is APPROVED by this specific retailer
+        console.log('🔍 [createOrder] Checking approval for:', {
+            customerId: consumerProfile.id,
+            retailerId: parseInt(retailerId)
+        });
         const approvalStatus = yield prisma_1.default.customerLinkRequest.findUnique({
             where: {
                 customerId_retailerId: {
@@ -56,6 +60,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 }
             }
         });
+        console.log('🔍 [createOrder] Approval record found:', approvalStatus);
         if (!approvalStatus || approvalStatus.status !== 'approved') {
             return res.status(403).json({
                 success: false,
@@ -251,7 +256,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
 exports.createOrder = createOrder;
 // Get retailers with STRICT location filtering
 const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a;
     try {
         const { district, sector, province, search } = req.query;
         const where = {};
@@ -277,6 +282,21 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         }
         // Only Verified Retailers
         where.isVerified = true;
+        // Get consumer profile ID and their link requests
+        let consumerProfileId = null;
+        let myRequests = [];
+        if ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) {
+            const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+                where: { userId: req.user.id },
+                include: {
+                    customerLinkRequests: true
+                }
+            });
+            if (consumerProfile) {
+                consumerProfileId = consumerProfile.id;
+                myRequests = consumerProfile.customerLinkRequests;
+            }
+        }
         const retailers = yield prisma_1.default.retailerProfile.findMany({
             where,
             include: {
@@ -293,17 +313,15 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 },
                 linkedWholesaler: {
                     select: { companyName: true }
-                },
-                customerLinkRequests: {
-                    where: { customerId: ((_a = req.user) === null || _a === void 0 ? void 0 : _a.id) ? (_b = (yield prisma_1.default.consumerProfile.findUnique({ where: { userId: req.user.id } }))) === null || _b === void 0 ? void 0 : _b.id : -1 }, // Check link status
-                    select: { status: true }
                 }
             }
         });
         // Format response
         const formattedRetailers = retailers.map((r) => {
-            var _a, _b, _c, _d, _e, _f, _g;
-            const requestStatus = ((_b = (_a = r.customerLinkRequests) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.status) || null;
+            var _a, _b, _c, _d;
+            // Find request for this specific retailer from our pre-fetched list
+            const myRequest = myRequests.find(req => req.retailerId === r.id);
+            const requestStatus = (myRequest === null || myRequest === void 0 ? void 0 : myRequest.status) || null;
             return {
                 id: r.id,
                 shopName: r.shopName,
@@ -311,14 +329,14 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 province: r.province,
                 district: r.district,
                 sector: r.sector,
-                phone: (_c = r.user) === null || _c === void 0 ? void 0 : _c.phone,
-                email: (_d = r.user) === null || _d === void 0 ? void 0 : _d.email,
+                phone: (_a = r.user) === null || _a === void 0 ? void 0 : _a.phone,
+                email: (_b = r.user) === null || _b === void 0 ? void 0 : _b.email,
                 isVerified: r.isVerified,
-                productCount: ((_e = r.inventory) === null || _e === void 0 ? void 0 : _e.length) || 0,
-                wholesaler: ((_f = r.linkedWholesaler) === null || _f === void 0 ? void 0 : _f.companyName) || null,
+                productCount: ((_c = r.inventory) === null || _c === void 0 ? void 0 : _c.length) || 0,
+                wholesaler: ((_d = r.linkedWholesaler) === null || _d === void 0 ? void 0 : _d.companyName) || null,
                 requestStatus: requestStatus,
                 isLinked: requestStatus === 'approved',
-                canSendRequest: !((_g = r.customerLinkRequests) === null || _g === void 0 ? void 0 : _g[0]) || requestStatus === 'rejected'
+                canSendRequest: !myRequest || requestStatus === 'rejected'
             };
         });
         res.json({
