@@ -38,6 +38,8 @@ router.post('/pos/sale', retailerController_1.createSale);
 router.get('/pos/daily-sales', retailerController_1.getDailySales);
 // Wholesaler Products (for Add Stock)
 router.get('/wholesaler/products', retailerController_1.getWholesalerProducts);
+router.get('/wholesaler/orders', retailerController_1.getPurchaseOrders);
+router.get('/wholesaler/orders/:id', retailerController_1.getPurchaseOrder);
 // Wholesaler Discovery & Link Request Routes
 router.get('/wholesalers/available', retailerController_1.getAvailableWholesalers);
 router.post('/wholesalers/link-request', retailerController_1.sendLinkRequest);

@@ -9,6 +9,7 @@ import employeeRoutes from './routes/employeeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import nfcRoutes from './routes/nfcRoutes';
 import walletRoutes from './routes/walletRoutes';
+import rewardsRoutes from './routes/rewardsRoutes';
 import debugRoutes, { setAppInstance } from './routes/debugRoutes';
 import trainingRoutes from './routes/trainingRoutes';
 console.log('--- Server Starting ---');
@@ -23,7 +24,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3062",
   "http://localhost:5173",
-  "http://localhost:9001", 
+  "http://localhost:9001",
   "http://localhost:9000",
   "http://127.0.0.1:9001",
   "https://big-company-frontend.vercel.app",
@@ -35,7 +36,7 @@ app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) === -1) {
       const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
@@ -74,6 +75,7 @@ app.use('/wholesaler', wholesalerRoutes);
 app.use('/admin', adminRoutes);
 app.use('/nfc', nfcRoutes);
 app.use('/wallet', walletRoutes);
+app.use('/rewards', rewardsRoutes);
 app.use('/debug', debugRoutes); // Public debug endpoint
 setAppInstance(app); // Enable route listing in debug
 

@@ -47,6 +47,7 @@ const employeeRoutes_1 = __importDefault(require("./routes/employeeRoutes"));
 const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const nfcRoutes_1 = __importDefault(require("./routes/nfcRoutes"));
 const walletRoutes_1 = __importDefault(require("./routes/walletRoutes"));
+const rewardsRoutes_1 = __importDefault(require("./routes/rewardsRoutes"));
 const debugRoutes_1 = __importStar(require("./routes/debugRoutes"));
 const trainingRoutes_1 = __importDefault(require("./routes/trainingRoutes"));
 console.log('--- Server Starting ---');
@@ -104,6 +105,7 @@ app.use('/wholesaler', wholesalerRoutes_1.default);
 app.use('/admin', adminRoutes_1.default);
 app.use('/nfc', nfcRoutes_1.default);
 app.use('/wallet', walletRoutes_1.default);
+app.use('/rewards', rewardsRoutes_1.default);
 app.use('/debug', debugRoutes_1.default); // Public debug endpoint
 (0, debugRoutes_1.setAppInstance)(app); // Enable route listing in debug
 app.get('/', (req, res) => {

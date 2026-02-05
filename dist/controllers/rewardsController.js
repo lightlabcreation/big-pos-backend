@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.redeemRewards = exports.getLeaderboard = exports.applyReferralCode = exports.getReferralCode = exports.getRewardsHistory = exports.getRewardsBalance = void 0;
+exports.sendToMeter = exports.redeemRewards = exports.getLeaderboard = exports.applyReferralCode = exports.getReferralCode = exports.getRewardsHistory = exports.getRewardsBalance = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get rewards balance (general rewards, not gas rewards)
 const getRewardsBalance = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -62,12 +62,17 @@ const getRewardsHistory = (req, res) => __awaiter(void 0, void 0, void 0, functi
         // Convert gas rewards to transaction format
         const transactions = gasRewards.map(r => ({
             id: r.id,
-            type: r.source === 'bonus' ? 'bonus' : r.source === 'referral' ? 'referral' : 'earned',
+            type: r.source,
             points: r.units * 100, // Convert m3 to points
             description: r.source === 'purchase' ? 'Shopping rewards' :
                 r.source === 'bonus' ? 'Welcome bonus' :
-                    'Referral reward',
+                    r.source === 'referral' ? 'Referral reward' :
+                        r.source === 'sent' ? `Sent to Meter ${r.meterId || ''}` :
+                            r.source === 'redemption' ? 'Redeemed for Credit' :
+                                r.source === 'order_payment' ? 'Used for order payment' :
+                                    'Gas reward',
             created_at: r.createdAt,
+            meter_id: r.meterId,
             order_id: r.reference,
             metadata: {
                 gas_amount: r.units,
@@ -292,3 +297,75 @@ const redeemRewards = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
 });
 exports.redeemRewards = redeemRewards;
+// Send rewards to meter POINTER
+const sendToMeter = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { meterId, amount } = req.body;
+        const userId = req.user.id;
+        // Validation 1: Positive amount
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ success: false, error: 'Invalid amount' });
+        }
+        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId }
+        });
+        if (!consumerProfile) {
+            return res.status(404).json({ success: false, error: 'Consumer profile not found' });
+        }
+        // Validation 2: Meter existence
+        let targetMeter = null;
+        if (meterId) {
+            // Check if meterId is numeric ID or string Meter Number
+            if (!isNaN(parseInt(meterId)) && typeof meterId !== 'string') {
+                targetMeter = yield prisma_1.default.gasMeter.findUnique({ where: { id: parseInt(meterId) } });
+            }
+            else if (!isNaN(parseInt(meterId))) {
+                // Try ID first
+                targetMeter = yield prisma_1.default.gasMeter.findUnique({ where: { id: parseInt(meterId) } });
+            }
+            if (!targetMeter) {
+                // Try Meter Number
+                targetMeter = yield prisma_1.default.gasMeter.findUnique({ where: { meterNumber: meterId.toString() } });
+            }
+        }
+        if (!targetMeter) {
+            return res.status(404).json({ success: false, error: 'Meter not found' });
+        }
+        // Validation 3: Balance check
+        const gasRewards = yield prisma_1.default.gasReward.findMany({
+            where: { consumerId: consumerProfile.id }
+        });
+        const totalUnits = gasRewards.reduce((sum, r) => sum + r.units, 0);
+        if (amount > totalUnits) {
+            return res.status(400).json({ success: false, error: `Insufficient balance. Available: ${totalUnits} m³` });
+        }
+        // Atomic Transaction
+        yield prisma_1.default.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
+            // 1. Deduct from GasReward
+            // Generate Unique Ref ID: GR-<timestamp>-<userId>-<random>
+            const refId = `GR-${Date.now()}-${userId}-${Math.floor(Math.random() * 10000)}`;
+            yield prisma.gasReward.create({
+                data: {
+                    consumerId: consumerProfile.id,
+                    units: -amount,
+                    source: 'sent',
+                    reference: refId,
+                    meterId: targetMeter.meterNumber
+                }
+            });
+            // 2. Credit GasMeter
+            yield prisma.gasMeter.update({
+                where: { id: targetMeter.id },
+                data: {
+                    currentUnits: { increment: amount }
+                }
+            });
+        }));
+        res.json({ success: true, message: `Successfully sent ${amount} m³ to Meter ${targetMeter.meterNumber}` });
+    }
+    catch (error) {
+        console.error('Send to meter error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+exports.sendToMeter = sendToMeter;

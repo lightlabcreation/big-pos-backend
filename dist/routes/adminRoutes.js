@@ -6,8 +6,10 @@ const supplierController_1 = require("../controllers/supplierController");
 const recruitmentController_1 = require("../controllers/recruitmentController");
 const dealsController_1 = require("../controllers/dealsController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
+const readOnlyMiddleware_1 = require("../middleware/readOnlyMiddleware");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
+router.use(readOnlyMiddleware_1.enforceReadOnly);
 router.get('/dashboard', adminController_1.getDashboard);
 // Customer Routes
 router.get('/customers', adminController_1.getCustomers);

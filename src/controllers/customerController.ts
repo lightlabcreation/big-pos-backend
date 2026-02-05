@@ -83,6 +83,16 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
         // If no purchase yet, but has approved links, use the first approved one as linkedRetailer
         const primaryRetailer = lastRetailer || (linkedRetailers.length > 0 ? linkedRetailers[0] : null);
 
+        // Check and generate Gas Reward Wallet ID if missing
+        if (!consumerProfile.gasRewardWalletId) {
+            const generatedId = 'GRW-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+            await prisma.consumerProfile.update({
+                where: { id: consumerProfile.id },
+                data: { gasRewardWalletId: generatedId }
+            });
+            consumerProfile.gasRewardWalletId = generatedId;
+        }
+
         res.json({
             success: true,
             data: {
@@ -94,6 +104,7 @@ export const getCustomerProfile = async (req: AuthRequest, res: Response) => {
                 landmark: consumerProfile.landmark,
                 is_verified: consumerProfile.isVerified,
                 membership_type: consumerProfile.membershipType,
+                gas_reward_wallet_id: consumerProfile.gasRewardWalletId, // New Field
                 // Backward compatibility: the "primary" retailer
                 linkedRetailer: primaryRetailer,
                 // NEW: All approved retailers
@@ -205,7 +216,7 @@ export const getWallets = async (req: AuthRequest, res: Response) => {
 
         // Lazy initialization: if no dashboard wallet exists, create it using legacy balance
         let dashboardWallet = wallets.find(w => w.type === 'dashboard_wallet');
-        
+
         if (!dashboardWallet) {
             dashboardWallet = await prisma.wallet.create({
                 data: {
@@ -803,9 +814,9 @@ export const getAvailableRetailers = async (req: AuthRequest, res: Response) => 
         // REQUIREMENT #4: Address-Based Store Discovery
         // Location fields are optional; if provided, they filter the results.
         if (province || district || sector) {
-             if (province) whereClause.province = (province as string).trim();
-             if (district) whereClause.district = (district as string).trim();
-             if (sector) whereClause.sector = (sector as string).trim();
+            if (province) whereClause.province = (province as string).trim();
+            if (district) whereClause.district = (district as string).trim();
+            if (sector) whereClause.sector = (sector as string).trim();
         }
 
         if (search) {

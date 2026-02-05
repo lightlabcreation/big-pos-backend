@@ -20,9 +20,12 @@ const prisma_1 = __importDefault(require("../utils/prisma"));
 // Create a new retail order
 // UPDATED: Reward Gas can now be applied as partial discount during payment
 // REQUIREMENT #3: Customer must be linked to retailer before ordering
+// Create a new retail order
+// UPDATED: Reward Gas can now be applied as partial discount during payment
+// REQUIREMENT #3: Customer must be linked to retailer before ordering
 const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { retailerId, items, paymentMethod, total, applyRewardGas, rewardGasAmount, meterId } = req.body;
+        const { retailerId, items, paymentMethod, total, applyRewardGas, rewardGasAmount, meterId, gasRewardWalletId } = req.body;
         const userId = req.user.id;
         // ==========================================
         // REWARD GAS CAN BE APPLIED AS PARTIAL DISCOUNT
@@ -65,17 +68,35 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             return res.status(400).json({ error: 'Order must contain items' });
         }
         // ==========================================
-        // METER ID VALIDATION (conditional)
+        // REWARD ELIGIBILITY VALIDATION
         // ==========================================
-        const isGasRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(paymentMethod); // 'wallet' is usually dashboard_wallet
-        if (isGasRewardEligible) {
-            if (!meterId) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Meter ID is required for this payment method to earn gas rewards.'
-                });
+        let shouldCalculateReward = false;
+        // Prefer gasRewardWalletId, fall back to meterId (legacy) if not explicitly mobile money rule-bound
+        const targetRewardId = gasRewardWalletId || meterId;
+        // CRITICAL RULE: If Credit Wallet, NO REWARDS.
+        if (paymentMethod === 'credit_wallet') {
+            shouldCalculateReward = false;
+        }
+        // CRITICAL RULE: Mobile Money = Optional ID.
+        else if (paymentMethod === 'mobile_money') {
+            shouldCalculateReward = !!targetRewardId; // Only if ID is provided
+        }
+        // Dashboard Wallet / Wallet = Eligible if ID provided (or if we treat it as auto-eligible? Plan implies generic generic rewards need ID)
+        // "Accept gasRewardWalletId instead of meterId for generic rewards."
+        else if (['dashboard_wallet', 'wallet', 'nfc_card'].includes(paymentMethod)) {
+            // Note: NFC Card rules say "NFC Card removed from Customer Dashboard", but Retailer/POS uses it. 
+            // If payment is NFC, rewards are allowed if ID is provided? 
+            // Plan didn't explicitly restrict NFC rewards, just UI removal. 
+            // Assuming generic rule: If ID provided -> Reward.
+            shouldCalculateReward = !!targetRewardId;
+        }
+        // Verify Reward ID matches Consumer if provided
+        if (gasRewardWalletId) {
+            if (consumerProfile.gasRewardWalletId && consumerProfile.gasRewardWalletId !== gasRewardWalletId) {
+                return res.status(400).json({ success: false, error: 'Invalid Gas Reward Wallet ID provided.' });
             }
-            // TODO: Validate meterId with external API if needed
+            // If profile has no ID yet, we might allow (but ideally profile should have one generated).
+            // Validation of existence logic could be here, but skipping strict DB lookup for ID validity if we trust it matches user.
         }
         // Calculate amount to pay after reward gas discount
         let amountToPay = total;
@@ -114,7 +135,29 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 });
             }
             // 2. Process remaining payment (after reward gas discount)
-            if (paymentMethod === 'wallet' && amountToPay > 0) {
+            if (paymentMethod === 'credit_wallet' && amountToPay > 0) {
+                // Credit Wallet Deductions
+                const creditWallet = yield prisma.wallet.findFirst({
+                    where: { consumerId: consumerProfile.id, type: 'credit_wallet' }
+                });
+                if (!creditWallet || creditWallet.balance < amountToPay) {
+                    throw new Error(`Insufficient credit wallet balance. Required: ${amountToPay} RWF`);
+                }
+                yield prisma.wallet.update({
+                    where: { id: creditWallet.id },
+                    data: { balance: { decrement: amountToPay } }
+                });
+                yield prisma.walletTransaction.create({
+                    data: {
+                        walletId: creditWallet.id,
+                        type: 'purchase',
+                        amount: -amountToPay,
+                        description: `Payment to Retailer (Credit)`,
+                        status: 'completed'
+                    }
+                });
+            }
+            else if (paymentMethod === 'wallet' && amountToPay > 0) { // dashboard_wallet
                 const wallet = yield prisma.wallet.findFirst({
                     where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
                 });
@@ -156,6 +199,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     data: { balance: { decrement: amountToPay } }
                 });
             }
+            // Mobile money is handled externally / async usually, but here we assume confirmed status or synchronous simulation for POS
             // 3. Create Sale Record
             const sale = yield prisma.sale.create({
                 data: {
@@ -176,37 +220,20 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 },
                 include: { saleItems: true }
             });
-            // 4. CREDIT GAS REWARDS (The Missing Piece)
-            // Logic: 12% of PROFIT if eligible payment method
-            if (isGasRewardEligible && meterId) {
-                // Calculate Profit
-                // We need product cost prices. Fetch products.
-                const productIds = items.map((i) => i.productId);
-                const products = yield prisma.product.findMany({
-                    where: { id: { in: productIds } }
-                });
-                let totalProfit = 0;
-                items.forEach((item) => {
-                    const product = products.find(p => p.id === item.productId);
-                    if (product && product.costPrice) {
-                        const profitPerItem = item.price - product.costPrice;
-                        if (profitPerItem > 0) {
-                            totalProfit += profitPerItem * item.quantity;
-                        }
-                    }
-                });
-                if (totalProfit > 0) {
-                    const rewardAmountRWF = totalProfit * 0.12; // 12% of profit
-                    const rewardUnits = rewardAmountRWF / 300; // Convert to M3 if 1 unit = 300 RWF approx or strictly use RWF value logic? 
-                    // Previous logic used units. Assuming 1 unit ~ 300 RWF based on deduction logic above.
-                    // Or just store exact units based on conversion.
+            // 4. CREDIT GAS REWARDS
+            // Reward Calculation: reward = totalAmount * 0.12
+            if (shouldCalculateReward) {
+                const rewardAmountRWF = total * 0.12;
+                // Round to 4 decimal places for precision
+                const rewardUnits = Number((rewardAmountRWF / 300).toFixed(4));
+                if (rewardUnits > 0) {
                     yield prisma.gasReward.create({
                         data: {
                             consumerId: consumerProfile.id,
                             saleId: sale.id,
-                            meterId: meterId,
+                            meterId: targetRewardId || null, // Capture which ID earned this
                             units: rewardUnits,
-                            profitAmount: totalProfit, // Store profit for audit
+                            profitAmount: 0, // We are not calculating profit anymore, but schema requires float? Nullable in schema? Schema says `profitAmount Float?`. So safe to send 0 or null.
                             source: 'purchase_reward',
                             reference: `Reward for Order #${sale.id}`
                         }
@@ -231,25 +258,18 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // REQUIREMENT #4: Address-Based Store Discovery
         // "Customer must enter: Sector, District, Province"
         // "Show only nearby / eligible stores"
-        // If strict location params are provided, enforce EXACT match
+        // If strict location params are provided, enforce match
         if (district || sector || province) {
             // Normalize input
             const matchSector = sector ? sector.trim() : undefined;
             const matchDistrict = district ? district.trim() : undefined;
             const matchProvince = province ? province.trim() : undefined;
-            const conditions = [];
-            // Use 'contains' for flexibility or exact match? 
-            // Prompt says "Match customer address with retailer store address". 
-            // Strict exact match is safer for "Show only nearby".
             if (matchProvince)
                 where.province = matchProvince;
             if (matchDistrict)
                 where.district = matchDistrict;
             if (matchSector)
                 where.sector = matchSector;
-            // If the retailer profile address field is a single string, we might need 'contains'.
-            // BUT, earlier we added province/district/sector columns to RetailerProfile.
-            // Let's assume those columns exist and are populated.
         }
         // Search by shop name (optional on top of location)
         if (search) {
@@ -283,20 +303,23 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Format response
         const formattedRetailers = retailers.map((r) => {
             var _a, _b, _c, _d, _e, _f, _g;
-            return ({
+            const requestStatus = ((_b = (_a = r.customerLinkRequests) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.status) || null;
+            return {
                 id: r.id,
                 shopName: r.shopName,
                 address: r.address,
                 province: r.province,
                 district: r.district,
                 sector: r.sector,
-                phone: (_a = r.user) === null || _a === void 0 ? void 0 : _a.phone,
-                email: (_b = r.user) === null || _b === void 0 ? void 0 : _b.email,
-                productCount: ((_c = r.inventory) === null || _c === void 0 ? void 0 : _c.length) || 0,
-                wholesaler: ((_d = r.linkedWholesaler) === null || _d === void 0 ? void 0 : _d.companyName) || null,
-                requestStatus: ((_f = (_e = r.customerLinkRequests) === null || _e === void 0 ? void 0 : _e[0]) === null || _f === void 0 ? void 0 : _f.status) || null, // pending, approved, or null
-                canSendRequest: !((_g = r.customerLinkRequests) === null || _g === void 0 ? void 0 : _g[0]) || r.customerLinkRequests[0].status === 'rejected'
-            });
+                phone: (_c = r.user) === null || _c === void 0 ? void 0 : _c.phone,
+                email: (_d = r.user) === null || _d === void 0 ? void 0 : _d.email,
+                isVerified: r.isVerified,
+                productCount: ((_e = r.inventory) === null || _e === void 0 ? void 0 : _e.length) || 0,
+                wholesaler: ((_f = r.linkedWholesaler) === null || _f === void 0 ? void 0 : _f.companyName) || null,
+                requestStatus: requestStatus,
+                isLinked: requestStatus === 'approved',
+                canSendRequest: !((_g = r.customerLinkRequests) === null || _g === void 0 ? void 0 : _g[0]) || requestStatus === 'rejected'
+            };
         });
         res.json({
             success: true,

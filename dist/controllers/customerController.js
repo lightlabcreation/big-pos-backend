@@ -31,7 +31,23 @@ const getCustomerProfile = (req, res) => __awaiter(void 0, void 0, void 0, funct
                     }
                 },
                 wallets: true,
-                // Include sales to find linked retailer
+                // NEW: Include all approved link requests to retailers
+                customerLinkRequests: {
+                    where: { status: 'approved' },
+                    include: {
+                        retailer: {
+                            include: {
+                                user: {
+                                    select: {
+                                        phone: true,
+                                        email: true,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                // Include sales to find last linked retailer (for backward compatibility / sorting)
                 sales: {
                     orderBy: { createdAt: 'desc' },
                     take: 1,
@@ -53,9 +69,21 @@ const getCustomerProfile = (req, res) => __awaiter(void 0, void 0, void 0, funct
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-        // Get the retailer from the most recent sale
+        // 1. Get ALL linked retailers from approved requests
+        const linkedRetailers = (consumerProfile.customerLinkRequests || []).map(req => {
+            var _a, _b;
+            return ({
+                id: req.retailer.id,
+                shopName: req.retailer.shopName,
+                phone: (_a = req.retailer.user) === null || _a === void 0 ? void 0 : _a.phone,
+                email: (_b = req.retailer.user) === null || _b === void 0 ? void 0 : _b.email,
+                address: req.retailer.address,
+                linkedAt: req.respondedAt || req.createdAt
+            });
+        });
+        // 2. Identify the "main" linked retailer (from last purchase)
         const lastSale = (_a = consumerProfile.sales) === null || _a === void 0 ? void 0 : _a[0];
-        const linkedRetailer = (lastSale === null || lastSale === void 0 ? void 0 : lastSale.retailerProfile) ? {
+        const lastRetailer = (lastSale === null || lastSale === void 0 ? void 0 : lastSale.retailerProfile) ? {
             id: lastSale.retailerProfile.id,
             shopName: lastSale.retailerProfile.shopName,
             phone: (_b = lastSale.retailerProfile.user) === null || _b === void 0 ? void 0 : _b.phone,
@@ -63,6 +91,17 @@ const getCustomerProfile = (req, res) => __awaiter(void 0, void 0, void 0, funct
             address: lastSale.retailerProfile.address,
             lastPurchaseDate: lastSale.createdAt,
         } : null;
+        // If no purchase yet, but has approved links, use the first approved one as linkedRetailer
+        const primaryRetailer = lastRetailer || (linkedRetailers.length > 0 ? linkedRetailers[0] : null);
+        // Check and generate Gas Reward Wallet ID if missing
+        if (!consumerProfile.gasRewardWalletId) {
+            const generatedId = 'GRW-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+            yield prisma_1.default.consumerProfile.update({
+                where: { id: consumerProfile.id },
+                data: { gasRewardWalletId: generatedId }
+            });
+            consumerProfile.gasRewardWalletId = generatedId;
+        }
         res.json({
             success: true,
             data: {
@@ -74,8 +113,11 @@ const getCustomerProfile = (req, res) => __awaiter(void 0, void 0, void 0, funct
                 landmark: consumerProfile.landmark,
                 is_verified: consumerProfile.isVerified,
                 membership_type: consumerProfile.membershipType,
-                // Linked Retailer (from last purchase)
-                linkedRetailer: linkedRetailer
+                gas_reward_wallet_id: consumerProfile.gasRewardWalletId, // New Field
+                // Backward compatibility: the "primary" retailer
+                linkedRetailer: primaryRetailer,
+                // NEW: All approved retailers
+                linkedRetailers: linkedRetailers
             }
         });
     }
@@ -703,18 +745,14 @@ const getAvailableRetailers = (req, res) => __awaiter(void 0, void 0, void 0, fu
         // Get ALL retailers for discovery (customers can send link requests to any retailer)
         const whereClause = {};
         // REQUIREMENT #4: Address-Based Store Discovery
-        // "Customer must enter: Sector, District, Province"
+        // Location fields are optional; if provided, they filter the results.
         if (province || district || sector) {
-            const conditions = [];
-            // Strict matching preference
             if (province)
                 whereClause.province = province.trim();
             if (district)
                 whereClause.district = district.trim();
             if (sector)
                 whereClause.sector = sector.trim();
-            // Fallback for address string if columns are empty? 
-            // Ideally we rely on the specific columns now.
         }
         if (search) {
             whereClause.OR = [

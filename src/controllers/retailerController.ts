@@ -96,7 +96,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
     const todaySalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
-    const customersToday = new Set(todaySales.map(s => s.consumerId).filter(Boolean)).size || todaySales.length; 
+    const customersToday = new Set(todaySales.map(s => s.consumerId).filter(Boolean)).size || todaySales.length;
     const totalOrders = todaySales.length;
 
     // Inventory Stats
@@ -155,7 +155,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     // Top Products
     const topSellingItems = await prisma.saleItem.groupBy({
       by: ['productId'],
-      _sum: { quantity: true, price: true }, 
+      _sum: { quantity: true, price: true },
       where: {
         sale: { retailerId: retailerProfile.id }
       },
@@ -176,7 +176,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         id: item.productId,
         name: product?.name || 'Unknown Product',
         sold: item._sum.quantity || 0,
-        revenue: (item._sum.price || 0), 
+        revenue: (item._sum.price || 0),
         stock: product?.stock || 0,
         trend: 0 // Placeholder
       };
@@ -193,7 +193,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     const formattedRecentOrders = recentOrders.map(order => ({
       id: order.id.toString(),
       customer: order.consumerProfile?.fullName || 'Walk-in Customer',
-      items: 0, 
+      items: 0,
       total: order.totalAmount,
       status: order.status,
       date: order.createdAt,
@@ -210,18 +210,18 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         totalCost,
         totalProfit, // NEW: Realized Profit
         profitMargin: profitMargin.toFixed(2), // NEW: Margin
-        
+
         // Inventory
         inventoryItems,
         lowStockItems: lowStockItems, // Array
         lowStockCount, // Number
-        
+
         // Wallets
         capitalWallet,
         profitWallet, // Keep for backward compatibility (Unknown if fontend relies on it)
         walletBalance: retailerProfile.walletBalance,
         creditLimit: retailerProfile.creditLimit,
-        
+
         // Today
         todaySales: todaySalesAmount,
         customersToday,
@@ -855,55 +855,55 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       // ==========================================
       const { gas_meter_id } = req.body; // Frontend sends 'gas_meter_id'
       const meterId = gas_meter_id; // Aliasing to match backend property often used
-      
+
       const isRewardEligible = ['dashboard_wallet', 'mobile_money'].includes(payment_method);
-      
+
       // Validation: Meter ID is mandatory for eligible methods
       if (isRewardEligible && !meterId) {
-         // This check should ideally be done BEFORE transaction to save DB calls, 
-         // but strict requirement compliance is paramount.
-         // Since we are inside transaction, throwing error rolls it back.
-         throw new Error('Meter ID is required for this payment method to earn gas rewards.');
+        // This check should ideally be done BEFORE transaction to save DB calls, 
+        // but strict requirement compliance is paramount.
+        // Since we are inside transaction, throwing error rolls it back.
+        throw new Error('Meter ID is required for this payment method to earn gas rewards.');
       }
 
       if (isRewardEligible && meterId && consumerId) {
         // Calculate Profit
         // We need product cost prices. 
         // We have items with 'product_id'.
-        
+
         let totalProfit = 0;
-        
+
         for (const item of items) {
-           const product = await prisma.product.findUnique({ where: { id: Number(item.product_id) } });
-           if (product && product.costPrice) {
-             const profitPerItem = item.price - product.costPrice;
-             if (profitPerItem > 0) {
-               totalProfit += profitPerItem * item.quantity;
-             }
-           }
+          const product = await prisma.product.findUnique({ where: { id: Number(item.product_id) } });
+          if (product && product.costPrice) {
+            const profitPerItem = item.price - product.costPrice;
+            if (profitPerItem > 0) {
+              totalProfit += profitPerItem * item.quantity;
+            }
+          }
         }
 
         if (totalProfit > 0) {
           const rewardAmountRWF = totalProfit * 0.12; // 12% of profit
           const rewardUnits = rewardAmountRWF / 300; // Approx 1 unit = 300 RWF (Assumption based on typical pricing)
-          
+
           await prisma.gasReward.create({
-             data: {
-               consumerId: consumerId,
-               saleId: sale.id,
-               meterId: meterId,
-               units: rewardUnits,
-               profitAmount: totalProfit,
-               source: 'pos_reward', // distinct from 'online_reward'
-               reference: `Reward for POS Sale #${sale.id}`
-             }
+            data: {
+              consumerId: consumerId,
+              saleId: sale.id,
+              meterId: meterId,
+              units: rewardUnits,
+              profitAmount: totalProfit,
+              source: 'pos_reward', // distinct from 'online_reward'
+              reference: `Reward for POS Sale #${sale.id}`
+            }
           });
-          
+
           // Update sale with meterId if schema supports it
           // await prisma.sale.update({ ... }) - Checking if Sale has meterId column... 
           // Previous steps suggested it might. If not, it's okay, Reward record is key.
           // Let's assume Sale model has 'meterId' field.
-           await prisma.sale.update({
+          await prisma.sale.update({
             where: { id: sale.id },
             data: { meterId: meterId }
           });
@@ -2398,30 +2398,41 @@ export const getLinkedCustomers = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Retailer profile not found' });
     }
 
-    const customers = await prisma.consumerProfile.findMany({
-      where: { linkedRetailerId: retailerProfile.id },
+    // NEW: Query CustomerLinkRequest table for approved customers
+    const approvedLinks = await prisma.customerLinkRequest.findMany({
+      where: {
+        retailerId: retailerProfile.id,
+        status: 'approved'
+      },
       include: {
-        user: {
-          select: { name: true, phone: true, email: true }
-        },
-        sales: {
-          where: { retailerId: retailerProfile.id },
-          select: { id: true, totalAmount: true }
+        customer: {
+          include: {
+            user: {
+              select: { name: true, phone: true, email: true }
+            },
+            sales: {
+              where: { retailerId: retailerProfile.id },
+              select: { id: true, totalAmount: true }
+            }
+          }
         }
       }
     });
 
-    const formattedCustomers = customers.map(c => ({
-      id: c.id,
-      name: c.fullName || c.user?.name || 'Unknown',
-      phone: c.user?.phone,
-      email: c.user?.email,
-      address: c.address,
-      isVerified: c.isVerified,
-      membershipType: c.membershipType,
-      orderCount: c.sales.length,
-      totalPurchased: c.sales.reduce((sum, s) => sum + s.totalAmount, 0)
-    }));
+    const formattedCustomers = approvedLinks.map(link => {
+      const c = link.customer;
+      return {
+        id: c.id,
+        name: c.fullName || c.user?.name || 'Unknown',
+        phone: c.user?.phone,
+        email: c.user?.email,
+        address: c.address,
+        isVerified: c.isVerified,
+        membershipType: c.membershipType,
+        orderCount: c.sales.length,
+        totalPurchased: c.sales.reduce((sum, s) => sum + s.totalAmount, 0)
+      };
+    });
 
     res.json({ success: true, customers: formattedCustomers, total: formattedCustomers.length });
   } catch (error: any) {
@@ -2443,20 +2454,23 @@ export const unlinkCustomer = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: 'Retailer profile not found' });
     }
 
-    const customer = await prisma.consumerProfile.findFirst({
+    // NEW: Find and delete the CustomerLinkRequest record
+    const linkRequest = await prisma.customerLinkRequest.findUnique({
       where: {
-        id: parseInt(customerId),
-        linkedRetailerId: retailerProfile.id
+        customerId_retailerId: {
+          customerId: parseInt(customerId),
+          retailerId: retailerProfile.id
+        }
       }
     });
 
-    if (!customer) {
+    if (!linkRequest) {
       return res.status(404).json({ success: false, error: 'Linked customer not found' });
     }
 
-    await prisma.consumerProfile.update({
-      where: { id: customer.id },
-      data: { linkedRetailerId: null }
+    // Delete the link request to unlink the customer
+    await prisma.customerLinkRequest.delete({
+      where: { id: linkRequest.id }
     });
 
     res.json({ success: true, message: 'Customer unlinked successfully' });
@@ -2583,8 +2597,8 @@ export const getPurchaseOrders = async (req: AuthRequest, res: Response) => {
       items_count: order.orderItems.length
     }));
 
-    res.json({ 
-      orders: formattedOrders, 
+    res.json({
+      orders: formattedOrders,
       total,
       limit: Number(limit),
       offset: Number(offset)

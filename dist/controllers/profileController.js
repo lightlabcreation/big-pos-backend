@@ -30,22 +30,20 @@ const getWholesalerProfile = (req, res) => __awaiter(void 0, void 0, void 0, fun
                         role: true
                     }
                 },
-                settings: true
+                wholesalerSettings: true
             }
         });
-        if (!profile) {
-            return res.status(404).json({ error: 'Wholesaler profile not found' });
-        }
-        // If settings don't exist yet, create them with defaults
-        if (!profile.settings) {
+        if (!profile.wholesalerSettings) {
             const defaultSettings = yield prisma_1.default.wholesalerSettings.create({
                 data: {
                     wholesalerId: profile.id
                 }
             });
-            profile.settings = defaultSettings;
+            profile.wholesalerSettings = defaultSettings;
         }
-        res.json({ success: true, profile });
+        // Map wholesalerSettings to settings for frontend compatibility
+        const profileResponse = Object.assign(Object.assign({}, profile), { settings: profile.wholesalerSettings });
+        res.json({ success: true, profile: profileResponse });
     }
     catch (error) {
         console.error('❌ Error fetching profile:', error);
@@ -85,10 +83,12 @@ const updateWholesalerProfile = (req, res) => __awaiter(void 0, void 0, void 0, 
                         role: true
                     }
                 },
-                settings: true
+                wholesalerSettings: true
             }
         });
-        res.json({ success: true, profile: updatedProfile });
+        // Map wholesalerSettings to settings for frontend compatibility
+        const profileResponse = Object.assign(Object.assign({}, updatedProfile), { settings: updatedProfile.wholesalerSettings });
+        res.json({ success: true, profile: profileResponse });
     }
     catch (error) {
         console.error('❌ Error updating profile:', error);
@@ -103,13 +103,13 @@ const updateWholesalerSettings = (req, res) => __awaiter(void 0, void 0, void 0,
         console.log('⚙️ Updating wholesaler settings:', (_a = req.user) === null || _a === void 0 ? void 0 : _a.id);
         const profile = yield prisma_1.default.wholesalerProfile.findUnique({
             where: { userId: req.user.id },
-            include: { settings: true }
+            include: { wholesalerSettings: true }
         });
         if (!profile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
         let updatedSettings;
-        if (!profile.settings) {
+        if (!profile.wholesalerSettings) {
             // Create new settings
             updatedSettings = yield prisma_1.default.wholesalerSettings.create({
                 data: Object.assign({ wholesalerId: profile.id }, settingsData)
@@ -118,7 +118,7 @@ const updateWholesalerSettings = (req, res) => __awaiter(void 0, void 0, void 0,
         else {
             // Update existing settings
             updatedSettings = yield prisma_1.default.wholesalerSettings.update({
-                where: { id: profile.settings.id },
+                where: { id: profile.wholesalerSettings.id },
                 data: settingsData
             });
         }

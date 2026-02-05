@@ -354,6 +354,7 @@ model ConsumerProfile {
   isVerified       Boolean           @default(false)
   landmark         String?
   membershipType   String            @default("standard")
+  gasRewardWalletId String?          @unique
   linkedRetailerId Int?              // Enforces ONE Customer -> ONE Retailer linking
   user             User              @relation(fields: [userId], references: [id], onDelete: NoAction, map: "ConsumerProfile_userId_fkey")
   linkedRetailer   RetailerProfile?  @relation("RetailerCustomers", fields: [linkedRetailerId], references: [id], map: "ConsumerProfile_linkedRetailerId_fkey")

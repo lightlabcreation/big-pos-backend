@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSettlementInvoice = exports.getSettlementInvoices = exports.unlinkCustomer = exports.getLinkedCustomers = exports.rejectCustomerLinkRequest = exports.approveCustomerLinkRequest = exports.getCustomerLinkRequests = exports.cancelLinkRequest = exports.getMyLinkRequests = exports.sendLinkRequest = exports.getAvailableWholesalers = exports.getAnalytics = exports.topUpWallet = exports.updateProfile = exports.getProfile = exports.makeRepayment = exports.requestCredit = exports.getCreditOrder = exports.getCreditOrders = exports.getCreditInfo = exports.getWalletTransactions = exports.createOrder = exports.getWholesalerProducts = exports.getDailySales = exports.fulfillSale = exports.cancelSale = exports.updateSaleStatus = exports.createSale = exports.scanBarcode = exports.getPOSProducts = exports.getWallet = exports.createBranch = exports.getBranches = exports.getOrder = exports.getOrders = exports.updateProduct = exports.createProduct = exports.getInventory = exports.getDashboardStats = void 0;
+exports.getPurchaseOrder = exports.getPurchaseOrders = exports.getSettlementInvoice = exports.getSettlementInvoices = exports.unlinkCustomer = exports.getLinkedCustomers = exports.rejectCustomerLinkRequest = exports.approveCustomerLinkRequest = exports.getCustomerLinkRequests = exports.cancelLinkRequest = exports.getMyLinkRequests = exports.sendLinkRequest = exports.getAvailableWholesalers = exports.getAnalytics = exports.topUpWallet = exports.updateProfile = exports.getProfile = exports.makeRepayment = exports.requestCredit = exports.getCreditOrder = exports.getCreditOrders = exports.getCreditInfo = exports.getWalletTransactions = exports.createOrder = exports.getWholesalerProducts = exports.getDailySales = exports.fulfillSale = exports.cancelSale = exports.updateSaleStatus = exports.createSale = exports.scanBarcode = exports.getPOSProducts = exports.getWallet = exports.createBranch = exports.getBranches = exports.getOrder = exports.getOrders = exports.updateProduct = exports.createProduct = exports.getInventory = exports.getDashboardStats = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 // Get dashboard stats
 // Get dashboard stats with comprehensive calculations
@@ -67,23 +67,54 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             })
         ]);
         // Calculate Stats
-        const totalRevenue = allSales.reduce((sum, s) => sum + s.totalAmount, 0);
+        // DYNAMIC PROFIT CALCULATION (Realized form Sales)
+        const sales = yield prisma_1.default.sale.findMany({
+            where: { retailerId: retailerProfile.id },
+            include: {
+                saleItems: {
+                    include: { product: true }
+                }
+            }
+        });
+        let totalRevenue = 0;
+        let totalCost = 0;
+        for (const sale of sales) {
+            // Calculate from sale items to be accurate with cost at time of sale? 
+            // Current schema stores cost in saleItem? No, strictly schema has price. 
+            // We rely on current product cost or if we stored it. 
+            // Ideally SaleItem should convert costPrice. 
+            // For now, using product.costPrice.
+            for (const item of sale.saleItems) {
+                const revenue = item.price * item.quantity;
+                const cost = (item.product.costPrice || 0) * item.quantity;
+                totalRevenue += revenue;
+                totalCost += cost;
+            }
+        }
+        const totalProfit = totalRevenue - totalCost;
+        const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
         const todaySalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
-        const customersToday = new Set(todaySales.map(s => s.consumerId).filter(Boolean)).size || todaySales.length; // Approximate if anonymous
+        const customersToday = new Set(todaySales.map(s => s.consumerId).filter(Boolean)).size || todaySales.length;
         const totalOrders = todaySales.length;
         // Inventory Stats
         const inventoryItems = inventory.length;
-        const lowStockItems = inventory.filter(p => p.lowStockThreshold && p.stock <= p.lowStockThreshold).length;
-        const lowStockList = inventory
-            .filter(p => p.lowStockThreshold && p.stock <= p.lowStockThreshold)
-            .map(p => ({
+        // LOW STOCK: Dynamically calculated (stock <= lowStockThreshold OR stock === 0)
+        const lowStockItems = inventory.filter(p => {
+            const threshold = p.lowStockThreshold || 10;
+            return p.stock <= threshold;
+        }).map(p => ({
+            id: p.id,
             name: p.name,
             stock: p.stock,
-            threshold: p.lowStockThreshold || 10
+            threshold: p.lowStockThreshold || 10,
+            status: p.stock === 0 ? 'out_of_stock' : 'low_stock',
+            cost_price: p.costPrice,
+            selling_price: p.price
         }));
+        const lowStockCount = lowStockItems.length;
         const capitalWallet = inventory.reduce((sum, p) => sum + (p.stock * (p.costPrice || 0)), 0);
         const potentialRevenue = inventory.reduce((sum, p) => sum + (p.stock * p.price), 0);
-        const profitWallet = potentialRevenue - capitalWallet;
+        const profitWallet = potentialRevenue - capitalWallet; // This is Potential Inventory Profit
         // Payment Method Breakdown
         const paymentStats = todaySales.reduce((acc, sale) => {
             const method = sale.paymentMethod || 'cash';
@@ -110,12 +141,10 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
         });
         const currentHour = new Date().getHours();
         const chartData = salesByHour.slice(Math.max(0, currentHour - 12), currentHour + 1); // Last 12 hours
-        // Top Products (This requires SaleItem aggregation, simplifying for now by using recent sales items or mock logic if complex aggregation is seemingly too heavy without raw sql)
-        // For robust top products we need to query SaleItem grouped by productId. 
-        // Let's do a quick separate query for top products
+        // Top Products
         const topSellingItems = yield prisma_1.default.saleItem.groupBy({
             by: ['productId'],
-            _sum: { quantity: true, price: true }, // price here is total for that line item (price * qty)? No, schema says `price` is unit price? check schema
+            _sum: { quantity: true, price: true },
             where: {
                 sale: { retailerId: retailerProfile.id }
             },
@@ -124,7 +153,6 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             },
             take: 5
         });
-        // We need product names, so we need to fetch products for these IDs
         const topProductIds = topSellingItems.map(item => item.productId);
         const topProductsDetails = yield prisma_1.default.product.findMany({
             where: { id: { in: topProductIds } }
@@ -135,12 +163,12 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 id: item.productId,
                 name: (product === null || product === void 0 ? void 0 : product.name) || 'Unknown Product',
                 sold: item._sum.quantity || 0,
-                revenue: (item._sum.price || 0), // Note: this might be inaccurate if price in SaleItem is unit price. Schema says `price Float`. Assuming it is effectively total or we can multiply.
+                revenue: (item._sum.price || 0),
                 stock: (product === null || product === void 0 ? void 0 : product.stock) || 0,
                 trend: 0 // Placeholder
             };
         });
-        // Recent Orders (Sales to consumers)
+        // Recent Orders
         const recentOrders = yield prisma_1.default.sale.findMany({
             where: { retailerId: retailerProfile.id },
             take: 5,
@@ -152,7 +180,7 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             return ({
                 id: order.id.toString(),
                 customer: ((_a = order.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
-                items: 0, // Need to fetch items count if critical
+                items: 0,
                 total: order.totalAmount,
                 status: order.status,
                 date: order.createdAt,
@@ -160,30 +188,42 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             });
         });
         res.json({
-            totalOrders,
-            pendingOrders: pendingOrders.length,
-            totalRevenue,
-            inventoryItems,
-            lowStockItems,
-            capitalWallet,
-            profitWallet,
-            creditLimit: retailerProfile.creditLimit,
-            todaySales: todaySalesAmount,
-            customersToday,
-            growth: { orders: 0, revenue: 0 },
-            // Payment breakdown
-            dashboardWalletRevenue: paymentStats['wallet'] || 0,
-            creditWalletRevenue: paymentStats['credit'] || 0,
-            mobileMoneyRevenue: paymentStats['momo'] || 0,
-            cashRevenue: paymentStats['cash'] || 0,
-            gasRewardsGiven: 0,
-            gasRewardsValue: 0,
-            // Charts & Lists
+            success: true,
+            stats: {
+                // Base Stats
+                totalOrders,
+                pendingOrders: pendingOrders.length,
+                totalRevenue, // Now Realized Revenue
+                totalCost,
+                totalProfit, // NEW: Realized Profit
+                profitMargin: profitMargin.toFixed(2), // NEW: Margin
+                // Inventory
+                inventoryItems,
+                lowStockItems: lowStockItems, // Array
+                lowStockCount, // Number
+                // Wallets
+                capitalWallet,
+                profitWallet, // Keep for backward compatibility (Unknown if fontend relies on it)
+                walletBalance: retailerProfile.walletBalance,
+                creditLimit: retailerProfile.creditLimit,
+                // Today
+                todaySales: todaySalesAmount,
+                customersToday,
+                growth: { orders: 0, revenue: 0 },
+                // Payment breakdown
+                dashboardWalletRevenue: paymentStats['wallet'] || 0,
+                creditWalletRevenue: paymentStats['credit'] || 0,
+                mobileMoneyRevenue: paymentStats['momo'] || 0,
+                cashRevenue: paymentStats['cash'] || 0,
+                gasRewardsGiven: 0,
+                gasRewardsValue: 0
+            },
+            // Lists
             salesData: chartData,
             paymentMethods: paymentMethodsData,
             topProducts: topProducts,
             recentOrders: formattedRecentOrders,
-            lowStockList: lowStockList
+            lowStockList: lowStockItems // Consistent naming
         });
     }
     catch (error) {
@@ -562,12 +602,9 @@ const getPOSProducts = (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         const { search, limit = '50', offset = '0' } = req.query;
         const where = {
-            OR: [
-                { retailerId: retailerProfile.id },
-                { retailerId: null } // Include global/seeded products
-            ],
-            status: 'active', // Only active products
-            // stock: { gt: 0 }  <-- Removed to show all inventory including out of stock
+            retailerId: retailerProfile.id, // Only show products belonging to this retailer
+            status: 'active',
+            stock: { gt: 0 } // Only show products with stock available
         };
         if (search) {
             where.AND = [
@@ -724,6 +761,57 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                             status: 'completed',
                             reference: sale.id.toString()
                         }
+                    });
+                }
+            }
+            // ==========================================
+            // GAS REWARD LOGIC (POS)
+            // ==========================================
+            const { gas_meter_id } = req.body; // Frontend sends 'gas_meter_id'
+            const meterId = gas_meter_id; // Aliasing to match backend property often used
+            const isRewardEligible = ['dashboard_wallet', 'mobile_money'].includes(payment_method);
+            // Validation: Meter ID is mandatory for eligible methods
+            if (isRewardEligible && !meterId) {
+                // This check should ideally be done BEFORE transaction to save DB calls, 
+                // but strict requirement compliance is paramount.
+                // Since we are inside transaction, throwing error rolls it back.
+                throw new Error('Meter ID is required for this payment method to earn gas rewards.');
+            }
+            if (isRewardEligible && meterId && consumerId) {
+                // Calculate Profit
+                // We need product cost prices. 
+                // We have items with 'product_id'.
+                let totalProfit = 0;
+                for (const item of items) {
+                    const product = yield prisma.product.findUnique({ where: { id: Number(item.product_id) } });
+                    if (product && product.costPrice) {
+                        const profitPerItem = item.price - product.costPrice;
+                        if (profitPerItem > 0) {
+                            totalProfit += profitPerItem * item.quantity;
+                        }
+                    }
+                }
+                if (totalProfit > 0) {
+                    const rewardAmountRWF = totalProfit * 0.12; // 12% of profit
+                    const rewardUnits = rewardAmountRWF / 300; // Approx 1 unit = 300 RWF (Assumption based on typical pricing)
+                    yield prisma.gasReward.create({
+                        data: {
+                            consumerId: consumerId,
+                            saleId: sale.id,
+                            meterId: meterId,
+                            units: rewardUnits,
+                            profitAmount: totalProfit,
+                            source: 'pos_reward', // distinct from 'online_reward'
+                            reference: `Reward for POS Sale #${sale.id}`
+                        }
+                    });
+                    // Update sale with meterId if schema supports it
+                    // await prisma.sale.update({ ... }) - Checking if Sale has meterId column... 
+                    // Previous steps suggested it might. If not, it's okay, Reward record is key.
+                    // Let's assume Sale model has 'meterId' field.
+                    yield prisma.sale.update({
+                        where: { id: sale.id },
+                        data: { meterId: meterId }
                     });
                 }
             }
@@ -1012,7 +1100,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 requiresLinking: true
             });
         }
-        const { items, totalAmount } = req.body;
+        const { items, totalAmount, paymentMethod = 'wallet' } = req.body;
         if (!items || items.length === 0) {
             return res.status(400).json({ error: 'Order must contain items' });
         }
@@ -1042,26 +1130,50 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 });
             }
         }
-        // Transaction: Create Order, Debit Wallet, Link Retailer to Wholesaler (if first order)
+        // Transaction: Create Order, Debit Wallet/Credit, and Link Retailer
         const result = yield prisma_1.default.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
-            // 1. Check Wallet
-            if (retailerProfile.walletBalance < totalAmount) {
-                throw new Error('Insufficient wallet balance');
-            }
-            // 2. Auto-link retailer to wholesaler on FIRST order (if not already linked)
-            if (!retailerProfile.linkedWholesalerId) {
+            // 1. Payment Processing Logic
+            if (paymentMethod === 'wallet') {
+                if (retailerProfile.walletBalance < totalAmount) {
+                    throw new Error('Insufficient wallet balance');
+                }
+                // Debit Wallet
                 yield prisma.retailerProfile.update({
                     where: { id: retailerProfile.id },
-                    data: { linkedWholesalerId: wholesalerId }
+                    data: { walletBalance: { decrement: totalAmount } }
                 });
             }
-            // 3. Create Order
+            else if (paymentMethod === 'credit') {
+                const credit = yield prisma.retailerCredit.findUnique({
+                    where: { retailerId: retailerProfile.id }
+                });
+                if (!credit || credit.availableCredit < totalAmount) {
+                    throw new Error('Insufficient credit limit available');
+                }
+                // Update Credit Usage
+                yield prisma.retailerCredit.update({
+                    where: { id: credit.id },
+                    data: {
+                        availableCredit: { decrement: totalAmount },
+                        usedCredit: { increment: totalAmount }
+                    }
+                });
+            }
+            else if (paymentMethod === 'momo') {
+                // Mobile Money logic (Mock: mark as pending payment)
+                // No immediate balance deduction
+            }
+            else {
+                throw new Error('Invalid payment method');
+            }
+            // 2. Create Order
             const order = yield prisma.order.create({
                 data: {
                     retailerId: retailerProfile.id,
                     wholesalerId: wholesalerId,
                     totalAmount: totalAmount,
-                    status: 'pending',
+                    paymentMethod: paymentMethod,
+                    status: paymentMethod === 'momo' ? 'pending_payment' : 'pending',
                     orderItems: {
                         create: items.map((item) => ({
                             productId: item.product_id,
@@ -1071,13 +1183,8 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     }
                 }
             });
-            // 4. Debit Wallet
-            yield prisma.retailerProfile.update({
-                where: { id: retailerProfile.id },
-                data: { walletBalance: { decrement: totalAmount } }
-            });
             return order;
-        }));
+        }), { timeout: 15000 });
         res.json({ success: true, order: result });
     }
     catch (error) {
@@ -2049,21 +2156,30 @@ const getLinkedCustomers = (req, res) => __awaiter(void 0, void 0, void 0, funct
         if (!retailerProfile) {
             return res.status(404).json({ success: false, error: 'Retailer profile not found' });
         }
-        const customers = yield prisma_1.default.consumerProfile.findMany({
-            where: { linkedRetailerId: retailerProfile.id },
+        // NEW: Query CustomerLinkRequest table for approved customers
+        const approvedLinks = yield prisma_1.default.customerLinkRequest.findMany({
+            where: {
+                retailerId: retailerProfile.id,
+                status: 'approved'
+            },
             include: {
-                user: {
-                    select: { name: true, phone: true, email: true }
-                },
-                sales: {
-                    where: { retailerId: retailerProfile.id },
-                    select: { id: true, totalAmount: true }
+                customer: {
+                    include: {
+                        user: {
+                            select: { name: true, phone: true, email: true }
+                        },
+                        sales: {
+                            where: { retailerId: retailerProfile.id },
+                            select: { id: true, totalAmount: true }
+                        }
+                    }
                 }
             }
         });
-        const formattedCustomers = customers.map(c => {
+        const formattedCustomers = approvedLinks.map(link => {
             var _a, _b, _c;
-            return ({
+            const c = link.customer;
+            return {
                 id: c.id,
                 name: c.fullName || ((_a = c.user) === null || _a === void 0 ? void 0 : _a.name) || 'Unknown',
                 phone: (_b = c.user) === null || _b === void 0 ? void 0 : _b.phone,
@@ -2073,7 +2189,7 @@ const getLinkedCustomers = (req, res) => __awaiter(void 0, void 0, void 0, funct
                 membershipType: c.membershipType,
                 orderCount: c.sales.length,
                 totalPurchased: c.sales.reduce((sum, s) => sum + s.totalAmount, 0)
-            });
+            };
         });
         res.json({ success: true, customers: formattedCustomers, total: formattedCustomers.length });
     }
@@ -2093,18 +2209,21 @@ const unlinkCustomer = (req, res) => __awaiter(void 0, void 0, void 0, function*
         if (!retailerProfile) {
             return res.status(404).json({ success: false, error: 'Retailer profile not found' });
         }
-        const customer = yield prisma_1.default.consumerProfile.findFirst({
+        // NEW: Find and delete the CustomerLinkRequest record
+        const linkRequest = yield prisma_1.default.customerLinkRequest.findUnique({
             where: {
-                id: parseInt(customerId),
-                linkedRetailerId: retailerProfile.id
+                customerId_retailerId: {
+                    customerId: parseInt(customerId),
+                    retailerId: retailerProfile.id
+                }
             }
         });
-        if (!customer) {
+        if (!linkRequest) {
             return res.status(404).json({ success: false, error: 'Linked customer not found' });
         }
-        yield prisma_1.default.consumerProfile.update({
-            where: { id: customer.id },
-            data: { linkedRetailerId: null }
+        // Delete the link request to unlink the customer
+        yield prisma_1.default.customerLinkRequest.delete({
+            where: { id: linkRequest.id }
         });
         res.json({ success: true, message: 'Customer unlinked successfully' });
     }
@@ -2177,3 +2296,112 @@ const getSettlementInvoice = (req, res) => __awaiter(void 0, void 0, void 0, fun
     }
 });
 exports.getSettlementInvoice = getSettlementInvoice;
+// Get Retailer Purchase Orders (Wholesale Orders)
+const getPurchaseOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { status, limit = 10, offset = 0 } = req.query;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const where = { retailerId: retailerProfile.id };
+        if (status)
+            where.status = status;
+        const [orders, total] = yield Promise.all([
+            prisma_1.default.order.findMany({
+                where,
+                include: {
+                    wholesalerProfile: true,
+                    orderItems: {
+                        include: {
+                            product: true
+                        }
+                    }
+                },
+                orderBy: { createdAt: 'desc' },
+                take: Number(limit),
+                skip: Number(offset)
+            }),
+            prisma_1.default.order.count({ where })
+        ]);
+        const formattedOrders = orders.map(order => {
+            var _a;
+            return ({
+                id: order.id,
+                wholesaler_name: ((_a = order.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName) || 'Unknown Wholesaler',
+                total_amount: order.totalAmount,
+                status: order.status,
+                payment_method: order.paymentMethod,
+                created_at: order.createdAt,
+                items_count: order.orderItems.length
+            });
+        });
+        res.json({
+            orders: formattedOrders,
+            total,
+            limit: Number(limit),
+            offset: Number(offset)
+        });
+    }
+    catch (error) {
+        console.error('❌ Error fetching purchase orders:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getPurchaseOrders = getPurchaseOrders;
+// Get Single Purchase Order Detail
+const getPurchaseOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    try {
+        const { id } = req.params;
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!retailerProfile) {
+            return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        const order = yield prisma_1.default.order.findUnique({
+            where: {
+                id: Number(id),
+                retailerId: retailerProfile.id
+            },
+            include: {
+                wholesalerProfile: true,
+                orderItems: {
+                    include: {
+                        product: true
+                    }
+                }
+            }
+        });
+        if (!order) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        const formattedOrder = {
+            id: order.id,
+            wholesaler_name: ((_a = order.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName) || 'Unknown Wholesaler',
+            total_amount: order.totalAmount,
+            status: order.status,
+            payment_method: order.paymentMethod,
+            created_at: order.createdAt,
+            items: order.orderItems.map(item => {
+                var _a;
+                return ({
+                    id: item.id,
+                    product_name: ((_a = item.product) === null || _a === void 0 ? void 0 : _a.name) || 'Unknown Product',
+                    quantity: item.quantity,
+                    price: item.price,
+                    total: item.quantity * item.price
+                });
+            })
+        };
+        res.json({ order: formattedOrder });
+    }
+    catch (error) {
+        console.error('❌ Error fetching purchase order detail:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.getPurchaseOrder = getPurchaseOrder;

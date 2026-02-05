@@ -57,7 +57,7 @@ import { authenticate, optionalAuthenticate } from '../middleware/authMiddleware
 const router = Router();
 
 // Public routes - Only retailers list is public (for discovery)
-router.get('/retailers', getRetailers);
+router.get('/retailers', optionalAuthenticate, getRetailers);
 router.get('/categories', authenticate, getCategories);
 // Products route - REQUIRES authentication and linking
 router.get('/products', authenticate, getProducts);
