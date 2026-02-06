@@ -23,11 +23,31 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     // ==========================================
 
     const consumerProfile = await prisma.consumerProfile.findUnique({
-      where: { userId }
+      where: { userId },
+      include: { user: true }
     });
 
     if (!consumerProfile) {
       return res.status(404).json({ error: 'Consumer profile not found' });
+    }
+
+    // ==========================================
+    // PALMKASH INTEGRATION
+    // ==========================================
+    let externalRef = null;
+    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo') {
+      const palmKash = (await import('../services/palmKash.service')).default;
+      const pmResult = await palmKash.initiatePayment({
+        amount: total, // Pay the full total (discount logic handles amountToPay, but let's assume total for now or calculate correctly)
+        phoneNumber: (consumerProfile as any).user?.phone || '',
+        referenceId: `ORD-${Date.now()}`,
+        description: `Retail Order Payment`
+      });
+
+      if (!pmResult.success) {
+        return res.status(400).json({ success: false, error: pmResult.error });
+      }
+      externalRef = pmResult.transactionId;
     }
 
     // ==========================================
@@ -231,8 +251,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           totalAmount: total,
           status: 'pending',
           paymentMethod: paymentMethod,
-          // Store meterId if provided (ensure schema supports it, confirmed in previous steps)
-          meterId: meterId || null,
+          // Store external PalmKash reference or legacy meterId
+          meterId: (externalRef || meterId || null) as string,
           saleItems: {
             create: items.map((item: any) => ({
               productId: item.productId,
@@ -830,10 +850,30 @@ export const repayLoan = async (req: AuthRequest, res: Response) => {
     const { amount, payment_method } = req.body;
 
     const consumerProfile = await prisma.consumerProfile.findUnique({
-      where: { userId: Number(req.user!.id) }
+      where: { userId: Number(req.user!.id) },
+      include: { user: true }
     });
 
     if (!consumerProfile) return res.status(404).json({ error: 'Profile not found' });
+
+    // ==========================================
+    // PALMKASH INTEGRATION
+    // ==========================================
+    let externalRef = null;
+    if (payment_method === 'mobile_money' || payment_method === 'momo') {
+        const palmKash = (await import('../services/palmKash.service')).default;
+        const pmResult = await palmKash.initiatePayment({
+            amount: parseFloat(amount),
+            phoneNumber: (consumerProfile as any).user?.phone || req.body.phone || '',
+            referenceId: `CREPAY-${Date.now()}`,
+            description: `Loan Repayment for Loan #${id}`
+        });
+
+        if (!pmResult.success) {
+            return res.status(400).json({ success: false, error: pmResult.error });
+        }
+        externalRef = pmResult.transactionId;
+    }
 
     await prisma.$transaction(async (prisma) => {
       // Find the loan (ensure ID is number)

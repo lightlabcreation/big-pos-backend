@@ -153,7 +153,8 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
         }
 
         const consumerProfile = await prisma.consumerProfile.findUnique({
-            where: { userId }
+            where: { userId },
+            include: { user: true }
         });
 
         if (!consumerProfile) {
@@ -261,7 +262,28 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 });
                 newBalance = wallet?.balance || 0;
             } else if (payment_method === 'mobile_money') {
-                // Simulated Success
+                // ==========================================
+                // PALMKASH INTEGRATION (Sandbox Sync)
+                // ==========================================
+                const palmKash = (await import('../services/palmKash.service')).default;
+                const pmResult = await palmKash.initiatePayment({
+                    amount: amount,
+                    phoneNumber: (consumerProfile as any).user?.phone || req.body.customer_phone || '',
+                    referenceId: `GAS-${Date.now()}`,
+                    description: `Gas topup for meter ${meter_number}`
+                });
+
+                if (!pmResult.success) {
+                    throw new Error(pmResult.error || 'PalmKash payment failed');
+                }
+                
+                // For order metadata and reference
+                (order as any).metadata = JSON.stringify({ 
+                    paymentMethod: 'mobile_money',
+                    gateway: 'palmkash',
+                    externalRef: pmResult.transactionId
+                });
+
                 const wallet = await tx.wallet.findFirst({
                     where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
                 });

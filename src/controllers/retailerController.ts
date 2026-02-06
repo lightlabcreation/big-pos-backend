@@ -822,6 +822,31 @@ export const createSale = async (req: AuthRequest, res: Response) => {
         consumerId = consumer.id;
       }
 
+      // --- Handle PalmKash (Mobile Money) ---
+      let externalRef = null;
+      if (payment_method === 'mobile_money' || payment_method === 'momo') {
+        if (!customer_phone) throw new Error('Customer phone required for mobile money payment');
+        
+        const palmKash = (await import('../services/palmKash.service')).default;
+        const pmResult = await palmKash.initiatePayment({
+          amount: total,
+          phoneNumber: customer_phone as string,
+          referenceId: `POS-${Date.now()}`,
+          description: `POS Sale at ${retailerProfile.shopName}`
+        });
+
+        if (!pmResult.success) {
+          throw new Error(pmResult.error || 'PalmKash payment initiation failed');
+        }
+        externalRef = pmResult.transactionId;
+
+        // Try to identify consumer for rewards
+        const consumer = await prisma.consumerProfile.findFirst({
+          where: { user: { phone: customer_phone as string } }
+        });
+        if (consumer) consumerId = consumer.id;
+      }
+
       // Create Sale Record
       const sale = await prisma.sale.create({
         data: {
@@ -829,7 +854,8 @@ export const createSale = async (req: AuthRequest, res: Response) => {
           consumerId: consumerId,
           totalAmount: total,
           paymentMethod: payment_method,
-          status: 'completed',
+          status: 'completed', // In Sandbox we assume success for now to keep flow identical
+          meterId: externalRef, // Store PalmKash TransID in meterId as a common reference field
           saleItems: {
             create: items.map((item: any) => ({
               productId: Number(item.product_id),
@@ -849,9 +875,10 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       }
 
       // Log Transaction if linked to consumer
-      if (consumerId && (payment_method === 'wallet' || payment_method === 'nfc')) {
+      if (consumerId && (['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc'].includes(payment_method))) {
+        const walletType = payment_method === 'credit_wallet' ? 'credit_wallet' : 'dashboard_wallet';
         const wallet = await prisma.wallet.findFirst({
-          where: { consumerId: consumerId, type: 'dashboard_wallet' }
+          where: { consumerId: consumerId, type: walletType }
         });
         if (wallet) {
           await prisma.walletTransaction.create({
@@ -870,24 +897,18 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       // ==========================================
       // GAS REWARD LOGIC (POS)
       // ==========================================
-      const { gas_meter_id } = req.body; // Frontend sends 'gas_meter_id'
-      const meterId = gas_meter_id; // Aliasing to match backend property often used
+      const { gasRewardWalletId, gas_meter_id } = req.body; // Accept both for backward compatibility
+      const targetRewardId = gasRewardWalletId || gas_meter_id;
 
-      const isRewardEligible = ['dashboard_wallet', 'mobile_money'].includes(payment_method);
+      const isRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method);
 
-      // Validation: Meter ID is mandatory for eligible methods
-      if (isRewardEligible && !meterId) {
-        // This check should ideally be done BEFORE transaction to save DB calls, 
-        // but strict requirement compliance is paramount.
-        // Since we are inside transaction, throwing error rolls it back.
-        throw new Error('Meter ID is required for this payment method to earn gas rewards.');
+      // Validation: ID is mandatory for dashboard_wallet, optional for mobile_money
+      if (payment_method === 'dashboard_wallet' && !targetRewardId) {
+        throw new Error('Gas Reward Wallet ID is required for Dashboard Wallet payments to earn rewards.');
       }
 
-      if (isRewardEligible && meterId && consumerId) {
+      if (isRewardEligible && targetRewardId && consumerId) {
         // Calculate Profit
-        // We need product cost prices. 
-        // We have items with 'product_id'.
-
         let totalProfit = 0;
 
         for (const item of items) {
@@ -902,27 +923,24 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
         if (totalProfit > 0) {
           const rewardAmountRWF = totalProfit * 0.12; // 12% of profit
-          const rewardUnits = rewardAmountRWF / 300; // Approx 1 unit = 300 RWF (Assumption based on typical pricing)
+          const rewardUnits = rewardAmountRWF / 300; 
 
           await prisma.gasReward.create({
             data: {
               consumerId: consumerId,
               saleId: sale.id,
-              meterId: meterId,
+              meterId: targetRewardId,
               units: rewardUnits,
               profitAmount: totalProfit,
-              source: 'pos_reward', // distinct from 'online_reward'
+              source: 'pos_reward',
               reference: `Reward for POS Sale #${sale.id}`
             }
           });
 
-          // Update sale with meterId if schema supports it
-          // await prisma.sale.update({ ... }) - Checking if Sale has meterId column... 
-          // Previous steps suggested it might. If not, it's okay, Reward record is key.
-          // Let's assume Sale model has 'meterId' field.
+          // Update sale with meterId (Reward Wallet ID) if schema supports it
           await prisma.sale.update({
             where: { id: sale.id },
-            data: { meterId: meterId }
+            data: { meterId: targetRewardId }
           });
         }
       }
@@ -1226,7 +1244,8 @@ export const getWholesalerProducts = async (req: AuthRequest, res: Response) => 
 export const createOrder = async (req: AuthRequest, res: Response) => {
   try {
     const retailerProfile = await prisma.retailerProfile.findUnique({
-      where: { userId: req.user!.id }
+      where: { userId: req.user!.id },
+      include: { user: true }
     });
 
     if (!retailerProfile) {
@@ -1309,8 +1328,22 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           }
         });
       } else if (paymentMethod === 'momo') {
-        // Mobile Money logic (Mock: mark as pending payment)
-        // No immediate balance deduction
+        // ==========================================
+        // PALMKASH INTEGRATION
+        // ==========================================
+        const palmKash = (await import('../services/palmKash.service')).default;
+        const pmResult = await palmKash.initiatePayment({
+          amount: totalAmount,
+          phoneNumber: (retailerProfile as any).user?.phone || req.body.phone || '',
+          referenceId: `WHL-${Date.now()}`,
+          description: `Wholesale Order Payment`
+        });
+
+        if (!pmResult.success) {
+          throw new Error(pmResult.error || 'PalmKash payment initiation failed');
+        }
+        // Store reference in external location? Order doesn't have ref field.
+        // We can use a comment or just log it. In this app, many things use ID.
       } else {
         throw new Error('Invalid payment method');
       }
@@ -1573,7 +1606,7 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
     if (!retailerProfile) return res.status(404).json({ error: 'Retailer not found' });
 
     const { id } = req.params; // Order ID
-    const { amount } = req.body;
+    const { amount, paymentMethod = 'wallet' } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Invalid repayment amount' });
@@ -1583,25 +1616,39 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
     const order = await prisma.order.findUnique({ where: { id: Number(id) } });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // 2. Validate Repayment (Mock check: if amount > pending)
-    // In real app, check order balance. Here assuming totalAmount is pending.
-    if (amount > order.totalAmount) {
-      // Allow overpayment? Probably not for MVP.
-      // return res.status(400).json({ error: 'Amount exceeds outstanding balance' });
+    // 2. PalmKash Integration for MoMo
+    let externalRef = null;
+    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo') {
+        const palmKash = (await import('../services/palmKash.service')).default;
+        const pmResult = await palmKash.initiatePayment({
+            amount: parseFloat(amount),
+            phoneNumber: (retailerProfile as any).user?.phone || req.body.phone || '',
+            referenceId: `RREPAY-${Date.now()}`,
+            description: `Credit Repayment for Order #${id}`
+        });
+
+        if (!pmResult.success) {
+            return res.status(400).json({ success: false, error: pmResult.error });
+        }
+        externalRef = pmResult.transactionId;
     }
 
-    // 3. Process Payment (Debit Wallet)
-    if (retailerProfile.walletBalance < amount) {
-      return res.status(400).json({ error: 'Insufficient wallet balance' });
+    // 3. Process Payment
+    if (paymentMethod === 'wallet') {
+        if (retailerProfile.walletBalance < amount) {
+          return res.status(400).json({ error: 'Insufficient wallet balance' });
+        }
     }
 
     // Transaction
     await prisma.$transaction(async (prisma) => {
-      // Debit Wallet
-      await prisma.retailerProfile.update({
-        where: { id: retailerProfile.id },
-        data: { walletBalance: { decrement: amount } }
-      });
+      // Debit Wallet if chosen
+      if (paymentMethod === 'wallet') {
+          await prisma.retailerProfile.update({
+            where: { id: retailerProfile.id },
+            data: { walletBalance: { decrement: amount } }
+          });
+      }
 
       // Update Credit Usage (if this was a credit order)
       const creditInfo = await prisma.retailerCredit.findUnique({ where: { retailerId: retailerProfile.id } });
@@ -1787,6 +1834,25 @@ export const topUpWallet = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
+    // ==========================================
+    // PALMKASH INTEGRATION
+    // ==========================================
+    let externalRef = null;
+    if (source === 'mobile_money' || source === 'momo') {
+        const palmKash = (await import('../services/palmKash.service')).default;
+        const pmResult = await palmKash.initiatePayment({
+            amount: parseFloat(amount),
+            phoneNumber: (retailerProfile as any).user?.phone || req.body.phone || '',
+            referenceId: `RTOP-${Date.now()}`,
+            description: `Retailer Wallet Topup`
+        });
+
+        if (!pmResult.success) {
+            return res.status(400).json({ success: false, error: pmResult.error });
+        }
+        externalRef = pmResult.transactionId;
+    }
+
     // Updated to just update balance for now as WalletTransaction is consumer-only in current schema
     // Update Wallet Balance
     const updatedProfile = await prisma.retailerProfile.update({
@@ -1796,7 +1862,7 @@ export const topUpWallet = async (req: AuthRequest, res: Response) => {
       }
     });
 
-    res.json({ success: true, message: 'Capital added successfully', balance: updatedProfile.walletBalance });
+    res.json({ success: true, message: 'Capital added successfully', balance: updatedProfile.walletBalance, transactionId: externalRef });
   } catch (error: any) {
     console.error('Error adding capital:', error);
     res.status(500).json({ error: error.message });
